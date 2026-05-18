@@ -1,7 +1,7 @@
 // src/routes/aiRoutes.js
 import express from 'express';
 import { generatePlan } from '../controllers/aiController.js';
-import { protect } from '../middlewares/authMiddleware.js';
+import { protect } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
 

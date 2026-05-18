@@ -1,6 +1,6 @@
 import express from 'express';
 import { getActivePlan, getPlanHistory } from '../controllers/workoutPlanController.js';
-import { protect } from '../middlewares/authMiddleware.js';
+import { protect } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
 

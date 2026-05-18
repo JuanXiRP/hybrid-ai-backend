@@ -42,7 +42,6 @@ app.use('/api/ai', aiRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/plans', workoutPlanRoutes);
 
-// Start server
 app.listen(PORT, () => {
-    console.log(`[Server] Running in ${process.env.NODE_ENV || 'development'} mode on port ${PORT}`);
+    console.log(`Server running on port ${PORT}`);
 });
