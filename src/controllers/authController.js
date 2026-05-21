@@ -1,12 +1,5 @@
 import User from '../models/User.js';
-import jwt from 'jsonwebtoken';
-
-// Helper function to generate a JWT token
-const generateToken = (id) => {
-    return jwt.sign({ id }, process.env.JWT_SECRET, {
-        expiresIn: process.env.JWT_EXPIRES_IN,
-    });
-};
+import generateToken from '../utils/generateToken.js'; 
 
 // @desc    Register a new user
 // @route   POST /api/auth/register
