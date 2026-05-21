@@ -1,6 +1,3 @@
-
-import { generateWorkoutPlan } from '../services/geminiService.js';
-import WorkoutPlan from '../models/WorkoutPlan.js';
 import ChatHistory from '../models/ChatHistory.js';
 import WorkoutPlan from '../models/WorkoutPlan.js';
 import { generateWorkoutPlan, processChatMessage } from '../services/geminiService.js';
