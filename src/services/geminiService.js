@@ -12,7 +12,7 @@ const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 // @desc    Generate a tailored workout plan using Gemini AI with retry logic
 export const generateWorkoutPlan = async (userProfile, maxRetries = 3) => {
     const model = genAI.getGenerativeModel({ 
-        model: "gemini-2.5-flash", 
+        model: "gemini-2.5-flash-lite", 
         generationConfig: {
             responseMimeType: "application/json",
         }
@@ -53,7 +53,7 @@ export const generateWorkoutPlan = async (userProfile, maxRetries = 3) => {
 // @desc    Process a chat message maintaining context
 export const processChatMessage = async (chatHistoryMessages, newMessage, userRoutineContext) => {
     const model = genAI.getGenerativeModel({ 
-        model: "gemini-1.5-flash",
+        model: "gemini-2.5-flash-lite",
         systemInstruction: `You are an elite Hybrid Training AI Coach. Context of the user's current routine: ${JSON.stringify(userRoutineContext)}. Answer questions concisely and professionally.`
     });
 
