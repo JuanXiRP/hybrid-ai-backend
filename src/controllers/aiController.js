@@ -1,6 +1,9 @@
 
 import { generateWorkoutPlan } from '../services/geminiService.js';
 import WorkoutPlan from '../models/WorkoutPlan.js';
+import ChatHistory from '../models/ChatHistory.js';
+import WorkoutPlan from '../models/WorkoutPlan.js';
+import { generateWorkoutPlan, processChatMessage } from '../services/geminiService.js';
 
 // @desc    Generate a workout plan using Gemini AI and save it to DB
 // @route   POST /api/ai/generate-plan
@@ -37,5 +40,44 @@ export const generatePlan = async (req, res) => {
             success: false,
             message: error.message || "Error processing AI response"
         });
+    }
+};
+// @desc    Send message to AI Coach and update history
+// @route   POST /api/ai/chat
+// @access  Private
+export const chatWithCoach = async (req, res) => {
+    try {
+        const { message } = req.body;
+        const userId = req.user._id;
+
+        if (!message) return res.status(400).json({ success: false, message: "Message is required" });
+
+        // 1. Fetch user's active routine for context
+        const activeRoutine = await WorkoutPlan.findOne({ userId }).sort({ createdAt: -1 });
+
+        // 2. Fetch or create chat history
+        let history = await ChatHistory.findOne({ userId });
+        if (!history) {
+            history = await ChatHistory.create({ userId, messages: [] });
+        }
+
+        // 3. Call Gemini via Service
+        const aiResponseText = await processChatMessage(history.messages, message, activeRoutine);
+
+        // 4. Append both messages to the database array
+        history.messages.push({ role: 'user', content: message });
+        history.messages.push({ role: 'model', content: aiResponseText });
+        await history.save();
+
+        res.status(200).json({
+            success: true,
+            data: {
+                reply: aiResponseText,
+                timestamp: new Date()
+            }
+        });
+    } catch (error) {
+        console.error("[Chat Controller Error]:", error);
+        res.status(500).json({ success: false, message: "Error communicating with Coach AI" });
     }
 };

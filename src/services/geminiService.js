@@ -50,3 +50,20 @@ export const generateWorkoutPlan = async (userProfile, maxRetries = 3) => {
         }
     }
 };
+// @desc    Process a chat message maintaining context
+export const processChatMessage = async (chatHistoryMessages, newMessage, userRoutineContext) => {
+    const model = genAI.getGenerativeModel({ 
+        model: "gemini-1.5-flash",
+        systemInstruction: `You are an elite Hybrid Training AI Coach. Context of the user's current routine: ${JSON.stringify(userRoutineContext)}. Answer questions concisely and professionally.`
+    });
+
+    // Format previous MongoDB messages to Gemini API format
+    const formattedHistory = chatHistoryMessages.map(msg => ({
+        role: msg.role,
+        parts: [{ text: msg.content }]
+    }));
+
+    const chat = model.startChat({ history: formattedHistory });
+    const result = await chat.sendMessage(newMessage);
+    return result.response.text();
+};
