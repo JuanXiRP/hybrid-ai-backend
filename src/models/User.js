@@ -4,43 +4,30 @@ import bcrypt from 'bcryptjs';
 
 const userSchema = new mongoose.Schema(
     {
-        name: {
-            type: String,
-            required: [true, 'Name is required'],
-            trim: true
-        },
-        email: {
-            type: String,
-            required: [true, 'Email is required'],
-            unique: true,
-            lowercase: true,
-            trim: true
-        },
-        password: {
-            type: String,
-            required: [true, 'Password is required'],
-            minlength: [6, 'Password must be at least 6 characters'],
-            select: false // Prevents password from being returned in queries by default
-        },
+        name: { type: String, required: [true, 'Name is required'], trim: true },
+        email: { type: String, required: [true, 'Email is required'], unique: true, lowercase: true, trim: true },
+        password: { type: String, required: [true, 'Password is required'], minlength: [6, 'Password must be at least 6 characters'], select: false },
+        
+        // Physical profile fields: Optional at registration, validated during Onboarding API call
         age: {
             type: Number,
-            required: [true, 'Age is required'],
+            required: false,
             min: [16, 'Age must be at least 16']
         },
         weight: {
             type: Number,
-            required: [true, 'Weight is required in kg'],
+            required: false,
             min: [30, 'Weight must be greater than 30kg']
         },
         height: {
             type: Number,
-            required: [true, 'Height is required in cm'],
+            required: false,
             min: [100, 'Height must be greater than 100cm']
         },
         sex: {
             type: String,
             enum: ['male', 'female', 'other'],
-            required: [true, 'Sex is required']
+            required: false
         },
         goal: {
             type: String,
@@ -48,7 +35,7 @@ const userSchema = new mongoose.Schema(
                 values: ['endurance', 'strength', 'both'],
                 message: '{VALUE} is not a valid goal'
             },
-            required: [true, 'Goal is required']
+            required: false
         },
         fitnessLevel: {
             type: String,
@@ -56,11 +43,11 @@ const userSchema = new mongoose.Schema(
                 values: ['beginner', 'intermediate', 'advanced'],
                 message: '{VALUE} is not a valid fitness level'
             },
-            required: [true, 'Fitness level is required']
+            required: false
         },
         daysAvailable: {
             type: Number,
-            required: [true, 'Available training days are required'],
+            required: false,
             min: [1, 'Must be at least 1 day'],
             max: [7, 'Cannot exceed 7 days']
         },
@@ -70,29 +57,18 @@ const userSchema = new mongoose.Schema(
                 values: [4, 8, 12],
                 message: '{VALUE} is not a valid duration. Choose 4, 8, or 12.'
             },
-            required: [true, 'Plan duration in weeks is required']
+            required: false
         },
-        injuries: {
-            type: [String],
-            default: []
-        },
-        isPremium: {
-            type: Boolean,
-            default: false
-        }
+        injuries: { type: [String], default: [] },
+        isPremium: { type: Boolean, default: false }
     },
-    {
-        // Automatically manages createdAt and updatedAt properties
-        timestamps: true
-    }
+    { timestamps: true }
 );
+
 // Pre-save hook to hash the password before saving to the database
 userSchema.pre('save', async function (next) {
-    // Only run this function if password was modified (not on other update functions)
     if (!this.isModified('password')) return next();
-
     try {
-        // Generate a salt and hash the password
         const salt = await bcrypt.genSalt(10);
         this.password = await bcrypt.hash(this.password, salt);
         next();
@@ -101,7 +77,6 @@ userSchema.pre('save', async function (next) {
     }
 });
 
-// Method to compare entered password with the hashed password in the database
 userSchema.methods.matchPassword = async function (enteredPassword) {
     return await bcrypt.compare(enteredPassword, this.password);
 };

@@ -35,16 +35,28 @@ export const registerUser = async (req, res) => {
 // @access  Private (Requires JWT token)
 export const updateUserProfile = async (req, res) => {
     try {
+        // 1. Destructure the expected payload for explicit validation
+        const { age, weight, height, sex, goal, fitnessLevel, daysAvailable, planDuration } = req.body;
+
+        // 2. Strict API-level validation
+        // Enforces that the onboarding payload is 100% complete before touching the database
+        if (!age || !weight || !height || !sex || !goal || !fitnessLevel || !daysAvailable || !planDuration) {
+            return res.status(400).json({
+                success: false,
+                message: 'Validation failed: All physical profile fields (age, weight, height, sex, goal, fitnessLevel, daysAvailable, planDuration) are strictly required.'
+            });
+        }
+
+        // 3. Database operation
         // req.user.id should be injected by your JWT authentication middleware
-        // findByIdAndUpdate is highly scalable and allows partial updates via PATCH
         const updatedUser = await User.findByIdAndUpdate(
             req.user.id,
             {
-                $set: req.body // Applies the Kotlin payload directly
+                $set: req.body
             },
             {
-                new: true, // Returns the modified document rather than the original
-                runValidators: true // Strictly enforces the schema rules (e.g., age min 16)
+                new: true, // Returns the modified document
+                runValidators: true // Enforces the min/max/enum rules defined in the schema
             }
         );
 
@@ -60,7 +72,6 @@ export const updateUserProfile = async (req, res) => {
             data: updatedUser
         });
     } catch (error) {
-        // Catches Mongoose ValidationErrors and returns a clean 400 to the Android client
         res.status(400).json({
             success: false,
             message: error.message
