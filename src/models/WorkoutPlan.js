@@ -1,4 +1,3 @@
-// src/models/WorkoutPlan.js
 import mongoose from 'mongoose';
 
 const workoutPlanSchema = new mongoose.Schema(
@@ -6,21 +5,12 @@ const workoutPlanSchema = new mongoose.Schema(
         userId: {
             type: mongoose.Schema.Types.ObjectId,
             ref: 'User',
-            required: true
+            required: true,
+            index: true // Speeds up queries fetching plans for a specific user
         },
-        startDate: {
-            type: Date,
-            default: Date.now
-        },
-        durationWeeks: {
-            type: Number,
-            required: true
-        },
-        goal: {
-            type: String,
-            required: true
-        },
-        // Store the complete AI-generated JSON structure
+        startDate: { type: Date, default: Date.now },
+        durationWeeks: { type: Number, required: true },
+        goal: { type: String, required: true },
         weeks: [
             {
                 weekNumber: Number,
@@ -41,12 +31,14 @@ const workoutPlanSchema = new mongoose.Schema(
         ],
         active: {
             type: Boolean,
-            default: true
+            default: true,
+            index: true // Speeds up the query looking for the currently active plan
         }
     },
-    {
-        timestamps: true
-    }
+    { timestamps: true }
 );
+
+// Compound index for the most common query: finding a user's active plan
+workoutPlanSchema.index({ userId: 1, active: 1 });
 
 export default mongoose.model('WorkoutPlan', workoutPlanSchema);

@@ -1,5 +1,5 @@
 // src/services/geminiService.js
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { GoogleGenerativeAI, SchemaType } from '@google/generative-ai'; // 🟢 Import SchemaType
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -10,26 +10,88 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // @desc    Generate a tailored workout plan using Gemini AI with retry logic
+// 🟢 1. Define the explicit JSON Schema that matches your Mongoose/Android models
+const workoutPlanSchema = {
+    type: SchemaType.OBJECT,
+    properties: {
+        durationWeeks: {
+            type: SchemaType.INTEGER,
+            description: "Total number of weeks for the macrocycle"
+        },
+        goal: {
+            type: SchemaType.STRING,
+            description: "Primary fitness goal of the macrocycle"
+        },
+        weeks: {
+            type: SchemaType.ARRAY,
+            description: "Array containing each week's programming",
+            items: {
+                type: SchemaType.OBJECT,
+                properties: {
+                    weekNumber: {
+                        type: SchemaType.INTEGER,
+                        description: "The sequential week number, e.g., 1, 2, 3"
+                    },
+                    days: {
+                        type: SchemaType.ARRAY,
+                        description: "The specific training days in this week",
+                        items: {
+                            type: SchemaType.OBJECT,
+                            properties: {
+                                dayName: {
+                                    type: SchemaType.STRING,
+                                    description: "Name of the day or session focus, e.g., 'Lower Body', 'Running', 'Rest'"
+                                },
+                                exercises: {
+                                    type: SchemaType.ARRAY,
+                                    description: "List of exercises for this specific day",
+                                    items: {
+                                        type: SchemaType.OBJECT,
+                                        properties: {
+                                            name: { type: SchemaType.STRING },
+                                            sets: { type: SchemaType.STRING },
+                                            reps: { type: SchemaType.STRING },
+                                            rpe: { type: SchemaType.STRING }
+                                        },
+                                        required: ["name", "sets", "reps", "rpe"]
+                                    }
+                                }
+                            },
+                            required: ["dayName", "exercises"]
+                        }
+                    }
+                },
+                required: ["weekNumber", "days"]
+            }
+        }
+    },
+    required: ["durationWeeks", "goal", "weeks"]
+};
+
+// @desc    Generate a tailored workout plan using Gemini AI with retry logic
 export const generateWorkoutPlan = async (userProfile, maxRetries = 3) => {
+    // 🟢 2. Pass the schema to the generation config
     const model = genAI.getGenerativeModel({ 
         model: "gemini-2.5-flash-lite", 
         generationConfig: {
             responseMimeType: "application/json",
+            responseSchema: workoutPlanSchema // Enforces the structure
         }
     });
 
+    // 3. Keep the prompt focused on the training logic, not the JSON formatting
     const prompt = `
-        Act as an expert personal trainer. Create a ${userProfile.planDuration}-week workout plan for a user with the following profile:
+        Act as an elite Hybrid Training coach. Create a progressive ${userProfile.planDuration}-week macrocycle.
+        Profile:
         - Goal: ${userProfile.goal}
-        - Fitness Level: ${userProfile.fitnessLevel}
-        - Days available: ${userProfile.daysAvailable} days per week
-        - Current Weight: ${userProfile.weight}kg
-        - Gender: ${userProfile.sex}
+        - Experience: ${userProfile.fitnessLevel}
+        - Availability: ${userProfile.daysAvailable} days/week
+        - Weight: ${userProfile.weight}kg
+        - Sex: ${userProfile.sex}
         
-        Return the response exclusively in a valid JSON format. The JSON must be structured week by week. For each week, detail the specific days, exercise names, sets, reps, and target RPE to ensure progressive overload across the ${userProfile.planDuration} weeks. Do not use markdown blocks, just raw JSON.
+        Ensure progressive overload, proper recovery days, and specific RPE targets based on the user's experience level.
     `;
 
-    // Implement Exponential Backoff for resilience against 503/429 errors
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
         try {
             const result = await model.generateContent(prompt);
@@ -39,9 +101,8 @@ export const generateWorkoutPlan = async (userProfile, maxRetries = 3) => {
             const isRateLimitOrUnavailable = error.status === 503 || error.status === 429;
             
             if (isRateLimitOrUnavailable && attempt < maxRetries) {
-                // Calculate wait time: 2s, 4s, 8s...
                 const waitTime = Math.pow(2, attempt) * 1000;
-                console.warn(`[Gemini API] Server busy (503). Retrying attempt ${attempt} of ${maxRetries} in ${waitTime}ms...`);
+                console.warn(`[Gemini API] Server busy. Retrying attempt ${attempt} in ${waitTime}ms...`);
                 await delay(waitTime);
             } else {
                 console.error("[Gemini API Error]:", error);
