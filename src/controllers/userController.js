@@ -78,3 +78,25 @@ export const updateUserProfile = async (req, res) => {
         });
     }
 };
+
+// @desc    Get user profile data
+// @route   GET /api/users/profile
+// @access  Private
+export const getUserProfile = async (req, res) => {
+    try {
+        // req.user is populated by your 'protect' middleware
+        const user = await User.findById(req.user.id).select('-password');
+
+        if (user) {
+            res.status(200).json({
+                success: true,
+                data: user
+            });
+        } else {
+            res.status(404).json({ success: false, message: 'User not found' });
+        }
+    } catch (error) {
+        console.error("Error fetching user profile:", error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+};
