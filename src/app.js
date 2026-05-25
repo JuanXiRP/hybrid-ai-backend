@@ -15,7 +15,8 @@ dotenv.config();
 connectDB();
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+// Defines the port using Render's dynamic environment variable, falling back to 10000 for local development
+const PORT = process.env.PORT || 10000;
 
 // Apply security headers
 app.use(helmet());
