@@ -1,10 +1,11 @@
 import express from 'express';
 import { createStrengthWorkout, createRunWorkout } from '../controllers/workoutController.js';
+import { protect } from '../middleware/authMiddleware.js'; // Ajusta la ruta a tu middleware real
 
 const router = express.Router();
 
-// Routes for handling different workout types
-router.post('/strength', createStrengthWorkout);
-router.post('/run', createRunWorkout);
+// 🟢 Rutas protegidas: Requieren un Bearer Token válido desde Android
+router.post('/strength', protect, createStrengthWorkout);
+router.post('/run', protect, createRunWorkout);
 
 export default router;
