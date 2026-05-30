@@ -17,6 +17,12 @@ const workoutPlanSchema = new mongoose.Schema(
                 days: [
                     {
                         dayName: String,
+                        workoutType: {
+                            type: String,
+                            enum: ['strength', 'cardio', 'rest'],
+                            required: true,
+                            default: 'rest'
+                        },
                         exercises: [
                             {
                                 name: String,
