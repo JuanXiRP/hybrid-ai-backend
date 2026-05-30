@@ -1,16 +1,15 @@
 // src/services/geminiService.js
-import { GoogleGenerativeAI, SchemaType } from '@google/generative-ai'; // 🟢 Import SchemaType
+import { GoogleGenerativeAI, SchemaType } from '@google/generative-ai';
 import dotenv from 'dotenv';
 
 dotenv.config();
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
-// Helper function to pause execution
+// Helper function to pause execution for retry logic
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-// @desc    Generate a tailored workout plan using Gemini AI with retry logic
-// 🟢 1. Define the explicit JSON Schema that matches your Mongoose/Android models
+// 🟢 1. Schema Enhancement: Added 'workoutType' enum to strictly segregate UI rendering states
 const workoutPlanSchema = {
     type: SchemaType.OBJECT,
     properties: {
@@ -40,11 +39,15 @@ const workoutPlanSchema = {
                             properties: {
                                 dayName: {
                                     type: SchemaType.STRING,
-                                    description: "Name of the day or session focus, e.g., 'Lower Body', 'Running', 'Rest'"
+                                    description: "Name of the day or session focus, e.g., 'Lower Body', 'Zone 2 Run', 'Rest'"
+                                },
+                                workoutType: {
+                                    type: SchemaType.STRING,
+                                    description: "MUST be exactly one of: 'strength', 'cardio', or 'rest'. This controls the app UI."
                                 },
                                 exercises: {
                                     type: SchemaType.ARRAY,
-                                    description: "List of exercises for this specific day",
+                                    description: "List of exercises. Must be empty for 'rest' days. For 'cardio', optionally add a single object detailing the run parameters.",
                                     items: {
                                         type: SchemaType.OBJECT,
                                         properties: {
@@ -57,7 +60,7 @@ const workoutPlanSchema = {
                                     }
                                 }
                             },
-                            required: ["dayName", "exercises"]
+                            required: ["dayName", "workoutType", "exercises"] // 🟢 Enforces the backend flag
                         }
                     }
                 },
@@ -70,16 +73,15 @@ const workoutPlanSchema = {
 
 // @desc    Generate a tailored workout plan using Gemini AI with retry logic
 export const generateWorkoutPlan = async (userProfile, maxRetries = 3) => {
-    // 🟢 2. Pass the schema to the generation config
     const model = genAI.getGenerativeModel({ 
         model: "gemini-2.5-flash-lite", 
         generationConfig: {
             responseMimeType: "application/json",
-            responseSchema: workoutPlanSchema // Enforces the structure
+            responseSchema: workoutPlanSchema
         }
     });
 
-    // 3. Keep the prompt focused on the training logic, not the JSON formatting
+    // 🟢 2. Strict Prompt Engineering: Boundary enforcement for hybrid isolation
     const prompt = `
         Act as an elite Hybrid Training coach. Create a progressive ${userProfile.planDuration}-week macrocycle.
         Profile:
@@ -89,7 +91,12 @@ export const generateWorkoutPlan = async (userProfile, maxRetries = 3) => {
         - Weight: ${userProfile.weight}kg
         - Sex: ${userProfile.sex}
         
-        Ensure progressive overload, proper recovery days, and specific RPE targets based on the user's experience level.
+        CRITICAL ARCHITECTURE RULES:
+        1. DOMAIN ISOLATION: DO NOT mix strength (gym) and cardio (running/cycling) in the same session. 
+        2. A session MUST be classified strictly via 'workoutType' as 100% 'strength', 100% 'cardio', or 'rest'.
+        3. If workoutType is 'cardio', DO NOT include core, abs, or mobility exercises in the array. Dedicate the day entirely to running metrics.
+        4. If workoutType is 'rest', the exercises array MUST be completely empty.
+        5. Ensure progressive overload and proper RPE allocation across weeks.
     `;
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
@@ -111,6 +118,7 @@ export const generateWorkoutPlan = async (userProfile, maxRetries = 3) => {
         }
     }
 };
+
 // @desc    Process a chat message maintaining context
 export const processChatMessage = async (chatHistoryMessages, newMessage, userRoutineContext) => {
     const model = genAI.getGenerativeModel({ 
@@ -118,7 +126,6 @@ export const processChatMessage = async (chatHistoryMessages, newMessage, userRo
         systemInstruction: `You are an elite Hybrid Training AI Coach. Context of the user's current routine: ${JSON.stringify(userRoutineContext)}. Answer questions concisely and professionally.`
     });
 
-    // Format previous MongoDB messages to Gemini API format
     const formattedHistory = chatHistoryMessages.map(msg => ({
         role: msg.role,
         parts: [{ text: msg.content }]
