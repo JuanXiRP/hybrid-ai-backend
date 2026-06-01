@@ -3,10 +3,16 @@ import WorkoutRun from '../models/WorkoutRun.js';
 
 // @desc    Create a new strength workout record
 // @route   POST /api/workouts/strength
-// @access  Public (Pending JWT implementation)
+// @access  Private
 export const createStrengthWorkout = async (req, res) => {
     try {
-        const workout = await WorkoutStrength.create(req.body);
+        // Inject the verified user ID from the JWT payload
+        const payload = {
+            ...req.body,
+            userId: req.user._id
+        };
+
+        const workout = await WorkoutStrength.create(payload);
         
         res.status(201).json({
             success: true,
@@ -22,10 +28,16 @@ export const createStrengthWorkout = async (req, res) => {
 
 // @desc    Create a new run workout record
 // @route   POST /api/workouts/run
-// @access  Public (Pending JWT implementation)
+// @access  Private
 export const createRunWorkout = async (req, res) => {
     try {
-        const workout = await WorkoutRun.create(req.body);
+        // Inject the verified user ID from the JWT payload
+        const payload = {
+            ...req.body,
+            userId: req.user._id
+        };
+
+        const workout = await WorkoutRun.create(payload);
         
         res.status(201).json({
             success: true,

@@ -1,6 +1,6 @@
 import express from 'express';
 import { createStrengthWorkout, createRunWorkout } from '../controllers/workoutController.js';
-import { protect } from '../middleware/authMiddleware.js'; // Ajusta la ruta a tu middleware real
+import { protect } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
 
