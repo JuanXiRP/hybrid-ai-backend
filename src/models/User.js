@@ -60,7 +60,8 @@ const userSchema = new mongoose.Schema(
             required: false
         },
         injuries: { type: [String], default: [] },
-        isPremium: { type: Boolean, default: false }
+        isPremium: { type: Boolean, default: false },
+        hasCompletedOnboarding: { type: Boolean, default: false }
     },
     { timestamps: true }
 );
