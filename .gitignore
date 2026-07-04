@@ -11,4 +11,7 @@ npm-debug.log*
 
 # OS generated files
 .DS_Store
-Thumbs.dbCLAUDE.md
+Thumbs.db
+
+# Claude Code local config
+CLAUDE.md
