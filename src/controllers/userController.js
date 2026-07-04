@@ -35,7 +35,7 @@ export const registerUser = async (req, res) => {
 // @access  Private (Requires JWT token)
 export const updateUserProfile = async (req, res) => {
   try {
-    // 1. Destructure the expected payload for explicit validation
+    // 1. Destructure expected payload for explicit validation
     const {
       age,
       weight,
@@ -66,8 +66,34 @@ export const updateUserProfile = async (req, res) => {
       });
     }
 
+    // 2b. Optional cycle-aware field: validate only when present (omitted for non-female users)
+    const { last_period_date } = req.body;
+    if (last_period_date !== undefined && last_period_date !== null) {
+      const isIsoShape = /^\d{4}-\d{2}-\d{2}$/.test(last_period_date);
+      const parsed = new Date(last_period_date);
+      // Round-trip check rejects impossible calendar dates (e.g. 2026-02-30 → rolls over)
+      const isValidCalendarDate =
+        isIsoShape &&
+        !Number.isNaN(parsed.getTime()) &&
+        parsed.toISOString().slice(0, 10) === last_period_date;
+
+      if (!isValidCalendarDate) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Validation failed: last_period_date must be a valid ISO date (yyyy-MM-dd).",
+        });
+      }
+      if (parsed.getTime() > Date.now()) {
+        return res.status(400).json({
+          success: false,
+          message: "Validation failed: last_period_date cannot be in the future.",
+        });
+      }
+    }
+
     // 3. Database operation
-    // req.user.id should be injected by your JWT authentication middleware
+    // req.user.id is injected by JWT authentication middleware
     const updatedUser = await User.findByIdAndUpdate(
       req.user.id,
       { $set: { ...req.body, hasCompletedOnboarding: true } }, // 🟢
@@ -98,7 +124,7 @@ export const updateUserProfile = async (req, res) => {
 // @access  Private
 export const getUserProfile = async (req, res) => {
   try {
-    // req.user is populated by your 'protect' middleware
+    // req.user is populated by the 'protect' middleware
     const user = await User.findById(req.user.id).select("-password");
 
     if (user) {

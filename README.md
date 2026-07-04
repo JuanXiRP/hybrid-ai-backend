@@ -1,28 +1,28 @@
 # Hybrid AI Training - Backend API
 
-Backend RESTful diseñado para la aplicación móvil Hybrid AI Training. Actúa como el núcleo central de la lógica de negocio: gestiona la autenticación, persiste datos biométricos y orquesta la comunicación con Google Gemini 2.5 Flash para la generación de planificaciones deportivas hiperpersonalizadas.
+RESTful backend designed for the Hybrid AI Training mobile app. It acts as the central core of the business logic: it manages authentication, persists biometric data, and orchestrates communication with Google Gemini 2.5 Flash to generate hyper-personalized training plans.
 
-## Arquitectura y Patrones de Diseño
+## Architecture and Design Patterns
 
-El sistema está construido siguiendo los principios SOLID y Clean Architecture, asegurando escalabilidad, bajo acoplamiento y alta resiliencia.
+The system is built following SOLID principles and Clean Architecture, ensuring scalability, low coupling, and high resilience.
 
-* Integración AI Determinista: Uso del modo `responseMimeType: "application/json"` nativo de Gemini 2.5 para garantizar una salida estructurada y estricta, eliminando el parseo basado en expresiones regulares.
-* Exponential Backoff: El servidor intercepta errores 503 y 429 de Google Cloud y ejecuta reintentos espaciados dinámicamente (2s → 4s → 8s) para evitar la propagación del error al cliente móvil.
-* Seguridad Stateless: Autenticación mediante JWT sin estado en memoria, permitiendo un escalado horizontal transparente. Cifrado de contraseñas con `bcryptjs` mediante hooks de pre-guardado en Mongoose.
-* Modelado Desnormalizado (NoSQL): Las rutinas generadas se almacenan como documentos JSON anidados en MongoDB, optimizando la lectura a una única consulta O(1) desde el cliente.
+* Deterministic AI Integration: Uses Gemini 2.5's native `responseMimeType: "application/json"` mode to guarantee structured, strict output, eliminating regular-expression-based parsing.
+* Exponential Backoff: The server intercepts Google Cloud 503 and 429 errors and performs dynamically spaced retries (2s → 4s → 8s) to prevent the error from propagating to the mobile client.
+* Stateless Security: Authentication via stateless in-memory JWT, enabling transparent horizontal scaling. Password hashing with `bcryptjs` through Mongoose pre-save hooks.
+* Denormalized Modeling (NoSQL): Generated routines are stored as nested JSON documents in MongoDB, optimizing reads to a single O(1) query from the client.
 
-## Stack Tecnológico
+## Tech Stack
 
 * Runtime: Node.js (ESModules)
 * Framework: Express.js
-* Base de Datos: MongoDB Atlas + Mongoose ODM
-* Seguridad: jsonwebtoken, bcryptjs
-* IA: @google/generative-ai
+* Database: MongoDB Atlas + Mongoose ODM
+* Security: jsonwebtoken, bcryptjs
+* AI: @google/generative-ai
 
-## Instalación y Configuración Local
+## Local Installation and Setup
 
-### Prerrequisitos
+### Prerequisites
 
 * Node.js v18+
-* Clave de API activa en Google AI Studio
-* Cluster en MongoDB Atlas o instancia local
+* An active API key from Google AI Studio
+* A MongoDB Atlas cluster or a local instance

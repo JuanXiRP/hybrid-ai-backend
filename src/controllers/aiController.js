@@ -7,12 +7,18 @@ import { generateWorkoutPlan, processChatMessage } from '../services/geminiServi
 // @access  Public (Pending JWT implementation)
 export const generatePlan = async (req, res) => {
     try {
-        // Destructure required fields from the request body
-        const {planDuration, goal } = req.body;
         const userId = req.user._id;
 
+        // Build the profile for Gemini from the PERSISTED user (source of truth for
+        // onboarding data like injuries and last_period_date), letting the request body
+        // override for one-off tweaks. This guarantees cycle/injury context reaches the prompt
+        // even though those fields are saved via PATCH /profile, not resent here.
+        const userProfile = { ...req.user.toObject(), ...req.body };
+        const planDuration = req.body.planDuration ?? req.user.planDuration;
+        const goal = req.body.goal ?? req.user.goal;
+
         // 1. Call Gemini Service
-        const rawAiResponse = await generateWorkoutPlan(req.body);
+        const rawAiResponse = await generateWorkoutPlan(userProfile);
         
         // Direct parsing is safe here because responseMimeType guarantees pure JSON
         const parsedData = JSON.parse(rawAiResponse);

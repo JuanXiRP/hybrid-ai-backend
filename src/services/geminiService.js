@@ -73,13 +73,33 @@ const workoutPlanSchema = {
 
 // @desc    Generate a tailored workout plan using Gemini AI with retry logic
 export const generateWorkoutPlan = async (userProfile, maxRetries = 3) => {
-    const model = genAI.getGenerativeModel({ 
-        model: "gemini-2.5-flash-lite", 
+    const model = genAI.getGenerativeModel({
+        model: "gemini-2.5-flash-lite",
         generationConfig: {
             responseMimeType: "application/json",
             responseSchema: workoutPlanSchema
         }
     });
+
+    // 🟢 Injuries: always surfaced so the model can regress/avoid contraindicated movements.
+    const injuriesList = Array.isArray(userProfile.injuries) && userProfile.injuries.length > 0
+        ? userProfile.injuries.join(', ')
+        : 'None reported';
+
+    // 🟢 Cycle-aware block: only for female athletes with a known last period date.
+    const isFemaleWithCycle = userProfile.sex === 'female' && userProfile.last_period_date;
+    const cycleAwareBlock = isFemaleWithCycle
+        ? `
+
+        MENSTRUAL CYCLE AWARENESS (female athlete):
+        - Last menstrual period start date: ${userProfile.last_period_date} (ISO yyyy-MM-dd).
+        - Today's date: ${new Date().toISOString().slice(0, 10)} (ISO yyyy-MM-dd).
+        - Estimate the current cycle phase from these two dates (assume a ~28-day cycle) and modulate training LOAD (intensity/volume) accordingly — never remove training days, only adjust their demand:
+          * Menstrual / early follicular: keep intensity moderate; prioritize technique, mobility and recovery.
+          * Late follicular / ovulation: schedule the highest-intensity strength and interval sessions (peak performance window).
+          * Luteal: progressively reduce peak intensity, favor aerobic/volume work, and add a deload toward the late luteal phase.
+        - Keep this modulation consistent with the progressive overload of the macrocycle.`
+        : '';
 
     // 🟢 2. Strict Prompt Engineering: Boundary enforcement for hybrid isolation
     const prompt = `
@@ -90,13 +110,17 @@ export const generateWorkoutPlan = async (userProfile, maxRetries = 3) => {
         - Availability: ${userProfile.daysAvailable} days/week
         - Weight: ${userProfile.weight}kg
         - Sex: ${userProfile.sex}
-        
+        - Injuries / limitations: ${injuriesList}
+
         CRITICAL ARCHITECTURE RULES:
-        1. DOMAIN ISOLATION: DO NOT mix strength (gym) and cardio (running/cycling) in the same session. 
+        1. DOMAIN ISOLATION: DO NOT mix strength (gym) and cardio (running/cycling) in the same session.
         2. A session MUST be classified strictly via 'workoutType' as 100% 'strength', 100% 'cardio', or 'rest'.
         3. If workoutType is 'cardio', DO NOT include core, abs, or mobility exercises in the array. Dedicate the day entirely to running metrics.
         4. If workoutType is 'rest', the exercises array MUST be completely empty.
         5. Ensure progressive overload and proper RPE allocation across weeks.
+
+        INJURY SAFETY:
+        6. Respect the listed injuries/limitations: avoid or regress any contraindicated movement and program a safer alternative. If "None reported", program normally.${cycleAwareBlock}
     `;
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
@@ -106,7 +130,7 @@ export const generateWorkoutPlan = async (userProfile, maxRetries = 3) => {
             return response.text();
         } catch (error) {
             const isRateLimitOrUnavailable = error.status === 503 || error.status === 429;
-            
+
             if (isRateLimitOrUnavailable && attempt < maxRetries) {
                 const waitTime = Math.pow(2, attempt) * 1000;
                 console.warn(`[Gemini API] Server busy. Retrying attempt ${attempt} in ${waitTime}ms...`);
@@ -121,7 +145,7 @@ export const generateWorkoutPlan = async (userProfile, maxRetries = 3) => {
 
 // @desc    Process a chat message maintaining context
 export const processChatMessage = async (chatHistoryMessages, newMessage, userRoutineContext) => {
-    const model = genAI.getGenerativeModel({ 
+    const model = genAI.getGenerativeModel({
         model: "gemini-2.5-flash-lite",
         systemInstruction: `You are an elite Hybrid Training AI Coach. Context of the user's current routine: ${JSON.stringify(userRoutineContext)}. Answer questions concisely and professionally.`
     });

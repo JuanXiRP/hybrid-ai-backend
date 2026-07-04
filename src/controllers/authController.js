@@ -35,7 +35,7 @@ export const registerUser = async (req, res) => {
         });
     }
 
-    // 2. Create the user (Password is hashed automatically by our Mongoose hook)
+    // 2. Create the user (password is hashed automatically by the Mongoose pre-save hook)
     const user = await User.create({
       name,
       email,
@@ -97,24 +97,24 @@ export const googleLogin = async (req, res) => {
             return res.status(400).json({ success: false, message: 'idToken is required' });
         }
 
-        // 1. Verificar el token CON Google (no nos fiamos del cliente)
+        // 1. Verify the token with Google (never trust the client)
         const ticket = await googleClient.verifyIdToken({
             idToken,
-            audience: process.env.GOOGLE_WEB_CLIENT_ID, // el mismo webClientId del cliente Android
+            audience: process.env.GOOGLE_WEB_CLIENT_ID, // must match Android client's webClientId
         });
         const { sub: googleId, email, name } = ticket.getPayload();
 
-        // 2. Buscar o crear
+        // 2. Find or create user
         let user = await User.findOne({ $or: [{ googleId }, { email }] });
         if (!user) {
             user = await User.create({ googleId, email, name: name || email.split('@')[0] });
         } else if (!user.googleId) {
-            // Usuario que ya existía con email/password y ahora entra con Google: enlazamos cuentas
+            // Existing email/password user linking Google: auto-link accounts
             user.googleId = googleId;
             await user.save();
         }
 
-        // 3. Mismo criterio de onboarding que el login normal
+        // 3. Same onboarding logic as standard login
         const hasPlan = await WorkoutPlan.exists({ userId: user._id });
 
         res.status(200).json({

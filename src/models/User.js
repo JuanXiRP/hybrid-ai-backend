@@ -20,7 +20,7 @@ const userSchema = new mongoose.Schema(
           return !this.googleId;
         },
         "Password is required",
-      ], // 🟢 solo si no es Google
+      ], // 🟢 only required if not a Google user
       minlength: [6, "Password must be at least 6 characters"],
       select: false,
     },
@@ -77,6 +77,11 @@ const userSchema = new mongoose.Schema(
       required: false,
     },
     injuries: { type: [String], default: [] },
+    // Cycle-aware onboarding: ISO yyyy-MM-dd string, stored verbatim to preserve the
+    // hand-mirrored wire contract. Only sent by the client for female users.
+    // FOLLOW-UP: already consumed by geminiService prompt; consider surfacing derived
+    // cycle-phase annotations in the plan responseSchema if the app needs to render them.
+    last_period_date: { type: String, required: false, default: null },
     isPremium: { type: Boolean, default: false },
     hasCompletedOnboarding: { type: Boolean, default: false },
   },
