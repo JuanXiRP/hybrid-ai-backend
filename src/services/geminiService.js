@@ -144,12 +144,20 @@ export const generateWorkoutPlan = async (userProfile, maxRetries = 3) => {
 };
 
 // @desc    Process a chat message maintaining context
-export const processChatMessage = async (chatHistoryMessages, newMessage, userRoutineContext) => {
+// planContext is an already-resolved text summary of the user's active plan (may be empty).
+export const processChatMessage = async (chatHistoryMessages, newMessage, planContext = '') => {
+    const baseInstruction = 'You are an elite Hybrid Training AI Coach. Answer questions concisely and professionally.';
+    const systemInstruction = planContext
+        ? `${baseInstruction}\n\nHere is the user's current training plan, use it to answer questions about their routine:\n${planContext}`
+        : baseInstruction;
+
     const model = genAI.getGenerativeModel({
         model: "gemini-2.5-flash-lite",
-        systemInstruction: `You are an elite Hybrid Training AI Coach. Context of the user's current routine: ${JSON.stringify(userRoutineContext)}. Answer questions concisely and professionally.`
+        systemInstruction
     });
 
+    // Map prior turns to Gemini contents[]; the current message is appended as the last
+    // 'user' turn by sendMessage below.
     const formattedHistory = chatHistoryMessages.map(msg => ({
         role: msg.role,
         parts: [{ text: msg.content }]
