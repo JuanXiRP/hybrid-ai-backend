@@ -7,6 +7,7 @@ import workoutRoutes from './routes/workoutRoutes.js';
 import aiRoutes from './routes/aiRoutes.js';
 import authRoutes from './routes/authRoutes.js';
 import workoutPlanRoutes from './routes/workoutPlanRoutes.js';
+import billingRoutes from './routes/billingRoutes.js';
 
 dotenv.config();
 
@@ -29,5 +30,6 @@ app.use('/api/workouts', workoutRoutes);
 app.use('/api/ai', aiRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/plans', workoutPlanRoutes);
+app.use('/api/billing', billingRoutes);
 
 export default app;

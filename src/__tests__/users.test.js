@@ -103,3 +103,73 @@ describe('PATCH /api/users/profile — last_period_date', () => {
         expect(res.status).toBe(400);
     });
 });
+
+// Entitlement fields (isPremium, trialEndsAt, subscription) are owned exclusively by
+// billingController. Both write paths into User used to spread req.body, which made every
+// one of those fields client-writable — a trivial privilege escalation once premium gates
+// anything. These tests pin the allowlists shut.
+describe('mass assignment — entitlement fields are not client-writable', () => {
+    it('ignores isPremium in PATCH /api/users/profile', async () => {
+        const token = await registerAndToken();
+
+        const res = await supertest(app)
+            .patch('/api/users/profile')
+            .set('Authorization', `Bearer ${token}`)
+            .send({ ...fullProfile, isPremium: true });
+
+        expect(res.status).toBe(200);
+        expect(res.body.data.isPremium).toBe(false);
+
+        // The database, not just the response body, must be unchanged.
+        const user = await User.findOne({ email: 'ada@example.com' });
+        expect(user.isPremium).toBe(false);
+    });
+
+    it('ignores trialEndsAt and subscription in PATCH /api/users/profile', async () => {
+        const token = await registerAndToken();
+        const farFuture = '2999-01-01T00:00:00.000Z';
+
+        await supertest(app)
+            .patch('/api/users/profile')
+            .set('Authorization', `Bearer ${token}`)
+            .send({
+                ...fullProfile,
+                trialEndsAt: farFuture,
+                subscription: { purchaseToken: 'forged', state: 'SUBSCRIPTION_STATE_ACTIVE' },
+            });
+
+        const user = await User.findOne({ email: 'ada@example.com' });
+        expect(user.trialEndsAt ?? null).toBeNull();
+        expect(user.subscription?.purchaseToken ?? null).toBeNull();
+    });
+
+    it('ignores isPremium in POST /api/users', async () => {
+        const res = await supertest(app)
+            .post('/api/users')
+            .send({
+                name: 'Grace',
+                email: 'grace@example.com',
+                password: 'password123',
+                isPremium: true,
+            });
+
+        expect(res.status).toBe(201);
+
+        const user = await User.findOne({ email: 'grace@example.com' });
+        expect(user.isPremium).toBe(false);
+    });
+
+    it('still persists the legitimate onboarding fields', async () => {
+        const token = await registerAndToken();
+
+        const res = await supertest(app)
+            .patch('/api/users/profile')
+            .set('Authorization', `Bearer ${token}`)
+            .send({ ...fullProfile, isPremium: true });
+
+        expect(res.body.data.age).toBe(30);
+        expect(res.body.data.goal).toBe('both');
+        expect(res.body.data.planDuration).toBe(8);
+        expect(res.body.data.hasCompletedOnboarding).toBe(true);
+    });
+});

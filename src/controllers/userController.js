@@ -2,13 +2,38 @@
 import jwt from "jsonwebtoken";
 import User from "../models/User.js";
 
+// The only fields a client may write through these endpoints. Entitlement state
+// (isPremium, trialEndsAt, subscription) is owned exclusively by billingController and must
+// never be settable from a request body — spreading req.body into a create/$set would let
+// any authenticated user grant themselves premium.
+const REGISTRATION_FIELDS = ["name", "email", "password"];
+const PROFILE_FIELDS = [
+  "age",
+  "weight",
+  "height",
+  "sex",
+  "goal",
+  "fitnessLevel",
+  "daysAvailable",
+  "planDuration",
+  "injuries",
+  "last_period_date",
+];
+
+const pick = (source, allowedKeys) =>
+  Object.fromEntries(
+    allowedKeys
+      .filter((key) => source[key] !== undefined)
+      .map((key) => [key, source[key]]),
+  );
+
 // @desc    Register a new user
 // @route   POST /api/users
 // @access  Public
 export const registerUser = async (req, res) => {
   try {
-    // 1. Create the user
-    const user = await User.create(req.body);
+    // 1. Create the user from an allowlist, never the raw body
+    const user = await User.create(pick(req.body, REGISTRATION_FIELDS));
 
     // 2. Generate the JWT token (fabricamos la llave)
     const token = jwt.sign(
@@ -93,10 +118,11 @@ export const updateUserProfile = async (req, res) => {
     }
 
     // 3. Database operation
-    // req.user.id is injected by JWT authentication middleware
+    // req.user.id is injected by JWT authentication middleware.
+    // Only PROFILE_FIELDS are $set — never the raw body (see the allowlist above).
     const updatedUser = await User.findByIdAndUpdate(
       req.user.id,
-      { $set: { ...req.body, hasCompletedOnboarding: true } }, // 🟢
+      { $set: { ...pick(req.body, PROFILE_FIELDS), hasCompletedOnboarding: true } },
       { new: true, runValidators: true },
     );
 
