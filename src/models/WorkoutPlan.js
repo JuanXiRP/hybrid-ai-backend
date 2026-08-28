@@ -23,6 +23,15 @@ const workoutPlanSchema = new mongoose.Schema(
                             required: true,
                             default: 'rest'
                         },
+                        // Provenance of the session. 'imported' means the day was parsed from a
+                        // program the athlete supplied; everything the AI wrote itself is
+                        // 'generated', which is also how every plan created before this field
+                        // existed reads back.
+                        source: {
+                            type: String,
+                            enum: ['imported', 'generated'],
+                            default: 'generated'
+                        },
                         exercises: [
                             {
                                 name: String,
@@ -39,6 +48,13 @@ const workoutPlanSchema = new mongoose.Schema(
             type: Boolean,
             default: true,
             index: true // Speeds up the query looking for the currently active plan
+        },
+        // 'imported' when the plan was built around a program the athlete brought in. The days
+        // themselves carry the finer-grained `source`.
+        origin: {
+            type: String,
+            enum: ['imported', 'generated'],
+            default: 'generated'
         }
     },
     { timestamps: true }

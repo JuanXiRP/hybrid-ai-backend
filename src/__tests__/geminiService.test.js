@@ -23,7 +23,11 @@ jest.mock('@google/generative-ai', () => ({
     })),
 }));
 
-import { generateWorkoutPlan, processChatMessage } from '../services/geminiService.js';
+import {
+    generateWorkoutPlan,
+    importAndCompleteWorkoutPlan,
+    processChatMessage,
+} from '../services/geminiService.js';
 
 afterEach(() => {
     mockGenerateContent.mockClear();
@@ -82,6 +86,116 @@ describe('generateWorkoutPlan — prompt content', () => {
         const prompt = mockGenerateContent.mock.calls[0][0];
         expect(prompt).not.toMatch(/MENSTRUAL CYCLE AWARENESS/i);
         expect(prompt).toContain('shoulder');
+    });
+});
+
+describe('importAndCompleteWorkoutPlan — contents and prompt', () => {
+    const profile = {
+        planDuration: 8,
+        goal: 'both',
+        fitnessLevel: 'intermediate',
+        daysAvailable: 5,
+        weight: 78,
+        sex: 'male',
+        injuries: ['left knee'],
+    };
+
+    it('sends the attachments as inlineData parts before the instruction text', async () => {
+        await importAndCompleteWorkoutPlan(profile, {
+            providedDomain: 'strength',
+            planDuration: 8,
+            sourceText: '',
+            attachments: [
+                { mimeType: 'application/pdf', data: 'JVBERi0xLjQK' },
+                { mimeType: 'image/jpeg', data: '/9j/4AAQSkZJRg==' },
+            ],
+        });
+
+        const contents = mockGenerateContent.mock.calls[0][0];
+        expect(Array.isArray(contents)).toBe(true);
+        expect(contents).toHaveLength(3);
+        expect(contents[0]).toEqual({
+            inlineData: { mimeType: 'application/pdf', data: 'JVBERi0xLjQK' },
+        });
+        expect(contents[1]).toEqual({
+            inlineData: { mimeType: 'image/jpeg', data: '/9j/4AAQSkZJRg==' },
+        });
+        expect(typeof contents[2].text).toBe('string');
+        expect(contents[2].text).toContain('2 document(s)/image(s)');
+    });
+
+    it('asks the model to reproduce the strength half and author only the cardio half', async () => {
+        await importAndCompleteWorkoutPlan(profile, {
+            providedDomain: 'strength',
+            planDuration: 8,
+            sourceText: 'Day A: Squat 5x5 @RPE8',
+            attachments: [],
+        });
+
+        const contents = mockGenerateContent.mock.calls[0][0];
+        const prompt = contents.at(-1).text;
+
+        expect(prompt).toContain('Squat 5x5 @RPE8');
+        expect(prompt).toMatch(/FIDELITY/);
+        // The imported half keeps the domain the athlete supplied...
+        expect(prompt).toContain("workoutType 'strength'");
+        expect(prompt).toContain("source 'imported'");
+        // ...and the model is told to write the other one, and only that one.
+        expect(prompt).toContain('You author ONLY the cardio half');
+        expect(prompt).toContain("Never write a 'strength' day of your own");
+        expect(prompt).toContain('exactly 8 weeks');
+        expect(prompt).toContain('must not exceed 5');
+        expect(prompt).toContain('left knee');
+        // Without attachments there is nothing to announce.
+        expect(prompt).not.toContain('document(s)/image(s)');
+    });
+
+    it('flips the roles when the athlete supplies their running block instead', async () => {
+        await importAndCompleteWorkoutPlan(
+            { ...profile, sex: 'female', last_period_date: '2026-07-01' },
+            {
+                providedDomain: 'cardio',
+                planDuration: 12,
+                sourceText: 'Tue: 8km easy',
+                attachments: [],
+            },
+        );
+
+        const prompt = mockGenerateContent.mock.calls[0][0].at(-1).text;
+
+        expect(prompt).toContain("workoutType 'cardio'");
+        expect(prompt).toContain('You author ONLY the strength half');
+        expect(prompt).toContain("Never write a 'cardio' day of your own");
+        // The cycle-aware block is shared with the generation path.
+        expect(prompt).toMatch(/MENSTRUAL CYCLE AWARENESS/i);
+        expect(prompt).toContain('2026-07-01');
+    });
+
+    it('requests the source-carrying response schema', async () => {
+        await importAndCompleteWorkoutPlan(profile, {
+            providedDomain: 'strength',
+            planDuration: 4,
+            sourceText: 'anything',
+            attachments: [],
+        });
+
+        const modelConfig = mockGetGenerativeModel.mock.calls.at(-1)[0];
+        const daySchema =
+            modelConfig.generationConfig.responseSchema.properties.weeks.items.properties.days.items;
+
+        expect(daySchema.properties.source).toBeDefined();
+        expect(daySchema.required).toContain('source');
+    });
+
+    it('leaves the generation schema untouched (no source field)', async () => {
+        await generateWorkoutPlan(profile);
+
+        const modelConfig = mockGetGenerativeModel.mock.calls.at(-1)[0];
+        const daySchema =
+            modelConfig.generationConfig.responseSchema.properties.weeks.items.properties.days.items;
+
+        expect(daySchema.properties.source).toBeUndefined();
+        expect(daySchema.required).not.toContain('source');
     });
 });
 

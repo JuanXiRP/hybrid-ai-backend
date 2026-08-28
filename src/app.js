@@ -15,6 +15,12 @@ const app = express();
 
 app.use(helmet());
 app.use(cors());
+
+// Plan import carries a base64 PDF or photo, which blows past the 100 kb default of
+// express.json(). Mounting a wider parser on that exact path BEFORE the global one is what makes
+// it work: body-parser marks the request as read, so the global parser below skips it and every
+// other route keeps the tight default limit. The real per-attachment caps live in aiController.
+app.use('/api/ai/import-plan', express.json({ limit: '12mb' }));
 app.use(express.json());
 
 app.get('/health', (req, res) => {

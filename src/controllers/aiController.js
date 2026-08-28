@@ -1,10 +1,74 @@
 import ChatHistory from '../models/ChatHistory.js';
 import WorkoutPlan from '../models/WorkoutPlan.js';
-import { generateWorkoutPlan, processChatMessage } from '../services/geminiService.js';
+import {
+    generateWorkoutPlan,
+    importAndCompleteWorkoutPlan,
+    processChatMessage,
+} from '../services/geminiService.js';
 
 // Size limits for coach chat context (no tokenizer available; ~4 chars/token heuristic)
 const MAX_PLAN_CONTEXT_CHARS = 6000; // ~1.5k tokens
 const MAX_HISTORY_TURNS = 20;        // keep only the most recent turns
+
+// Limits for the plan-import payload. The route mounts a 12 MB body parser (see app.js); these
+// caps are the real contract, kept well below it so a rejected upload fails as a readable 400
+// rather than a bare 413. They mirror PlanAttachmentReader on the Android client.
+const ALLOWED_ATTACHMENT_MIME_TYPES = new Set([
+    'application/pdf',
+    'image/png',
+    'image/jpeg',
+    'image/webp',
+]);
+const MAX_ATTACHMENTS = 5;
+const MAX_ATTACHMENT_BYTES = 8 * 1024 * 1024; // 8 MB decoded, across all attachments
+const MAX_SOURCE_TEXT_CHARS = 20000;
+const BASE64_PATTERN = /^[A-Za-z0-9+/\r\n]+={0,2}$/;
+
+// Decoded length of a base64 string, without allocating the buffer.
+const decodedByteLength = (base64) => {
+    const clean = base64.replace(/[\r\n]/g, '');
+    const padding = clean.endsWith('==') ? 2 : clean.endsWith('=') ? 1 : 0;
+    return Math.floor((clean.length * 3) / 4) - padding;
+};
+
+// Returns an error message, or null when the payload is usable.
+const validateImportPayload = ({ providedDomain, sourceText, attachments }) => {
+    if (providedDomain !== 'strength' && providedDomain !== 'cardio') {
+        return "providedDomain must be either 'strength' or 'cardio'";
+    }
+
+    const text = typeof sourceText === 'string' ? sourceText.trim() : '';
+    const files = Array.isArray(attachments) ? attachments : [];
+
+    if (!text && files.length === 0) {
+        return 'Send the plan as text (sourceText) or as at least one attachment';
+    }
+    if (text.length > MAX_SOURCE_TEXT_CHARS) {
+        return `sourceText must be at most ${MAX_SOURCE_TEXT_CHARS} characters`;
+    }
+    if (files.length > MAX_ATTACHMENTS) {
+        return `At most ${MAX_ATTACHMENTS} attachments are allowed`;
+    }
+
+    let totalBytes = 0;
+    for (const file of files) {
+        if (!file || typeof file.mimeType !== 'string' || typeof file.data !== 'string' || !file.data) {
+            return 'Every attachment needs a mimeType and base64 data';
+        }
+        if (!ALLOWED_ATTACHMENT_MIME_TYPES.has(file.mimeType)) {
+            return `Unsupported attachment type "${file.mimeType}". Allowed: ${[...ALLOWED_ATTACHMENT_MIME_TYPES].join(', ')}`;
+        }
+        if (!BASE64_PATTERN.test(file.data)) {
+            return 'Attachment data must be base64-encoded';
+        }
+        totalBytes += decodedByteLength(file.data);
+    }
+    if (totalBytes > MAX_ATTACHMENT_BYTES) {
+        return `Attachments must total at most ${MAX_ATTACHMENT_BYTES / (1024 * 1024)} MB`;
+    }
+
+    return null;
+};
 
 // Tolerant sanitization of client-sent conversation history.
 // Keeps valid { role: 'user' | 'model', content: string } turns, drops leading 'model'
@@ -69,6 +133,70 @@ export const generatePlan = async (req, res) => {
         });
     }
 };
+
+// @desc    Parse a plan the athlete already follows and let Gemini write the missing half
+// @route   POST /api/ai/import-plan
+// @access  Private
+export const importPlan = async (req, res) => {
+    try {
+        const { providedDomain, sourceText, attachments } = req.body;
+
+        const validationError = validateImportPayload({ providedDomain, sourceText, attachments });
+        if (validationError) {
+            return res.status(400).json({ success: false, message: validationError });
+        }
+
+        const userId = req.user._id;
+
+        // Same profile resolution as generatePlan: the persisted user is the source of truth for
+        // onboarding data, the body may override. The source material itself is stripped out —
+        // it travels as an explicit argument, not as prompt profile fields.
+        const { sourceText: _text, attachments: _files, ...bodyOverrides } = req.body;
+        const userProfile = { ...req.user.toObject(), ...bodyOverrides };
+        const planDuration = req.body.planDuration ?? req.user.planDuration;
+        const goal = req.body.goal ?? req.user.goal;
+
+        const rawAiResponse = await importAndCompleteWorkoutPlan(userProfile, {
+            providedDomain,
+            planDuration,
+            sourceText: typeof sourceText === 'string' ? sourceText.trim() : '',
+            attachments: Array.isArray(attachments) ? attachments : [],
+        });
+
+        // Direct parsing is safe here because responseMimeType guarantees pure JSON
+        const parsedData = JSON.parse(rawAiResponse);
+        const weeks = Array.isArray(parsedData.weeks) ? parsedData.weeks : [];
+
+        // Rule 8 of the import prompt: an empty weeks array is how the model says "I could not
+        // find a training program in this". That is a user-fixable problem, not a server error.
+        if (weeks.length === 0) {
+            return res.status(422).json({
+                success: false,
+                message: "We couldn't read a training plan in what you sent. Try a clearer document, or paste the routine as text.",
+            });
+        }
+
+        const newPlan = await WorkoutPlan.create({
+            userId,
+            durationWeeks: planDuration,
+            goal,
+            origin: 'imported',
+            weeks,
+        });
+
+        res.status(201).json({
+            success: true,
+            data: newPlan,
+        });
+    } catch (error) {
+        console.error("[Import Controller Error]:", error);
+        res.status(500).json({
+            success: false,
+            message: error.message || "Error processing AI response",
+        });
+    }
+};
+
 // @desc    Send message to AI Coach and update history
 // @route   POST /api/ai/chat
 // @access  Private
