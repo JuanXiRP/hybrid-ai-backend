@@ -104,6 +104,55 @@ describe('POST /api/auth/login', () => {
         expect(res.status).toBe(401);
         expect(res.body.success).toBe(false);
     });
+
+    it('rejects an unknown email without revealing more than "invalid credentials"', async () => {
+        const res = await supertest(app)
+            .post('/api/auth/login')
+            .send({ email: 'nobody@example.com', password: 'password123' });
+
+        expect(res.status).toBe(401);
+        expect(res.body.message).toBe('Invalid credentials');
+    });
+
+    // Regression: a Google-only account has no password, and bcrypt.compare throws on an undefined
+    // hash. That throw used to escape as a 500, leaving the user with no way in at all —
+    // registering answered "already exists" and logging in crashed.
+    it('answers 401 with actionable copy for a Google-only account, never a 500', async () => {
+        await supertest(app).post('/api/auth/google').send({ idToken: 'fake-google-token' });
+
+        const res = await supertest(app)
+            .post('/api/auth/login')
+            .send({ email: 'googleuser@gmail.com', password: 'anything' });
+
+        expect(res.status).toBe(401);
+        expect(res.body.success).toBe(false);
+        expect(res.body.message).toMatch(/Google Sign-In/);
+    });
+});
+
+describe('User.matchPassword', () => {
+    it('returns false instead of throwing when the account has no password', async () => {
+        const user = await User.create({
+            name: 'Google Only',
+            email: 'nopassword@example.com',
+            googleId: 'google-999',
+        });
+
+        await expect(user.matchPassword('anything')).resolves.toBe(false);
+    });
+
+    it('still compares correctly when a password is present', async () => {
+        await User.create({
+            name: 'With Password',
+            email: 'haspassword@example.com',
+            password: 'password123',
+        });
+
+        const user = await User.findOne({ email: 'haspassword@example.com' }).select('+password');
+
+        await expect(user.matchPassword('password123')).resolves.toBe(true);
+        await expect(user.matchPassword('wrong')).resolves.toBe(false);
+    });
 });
 
 // ==================== GOOGLE SIGN-IN ====================

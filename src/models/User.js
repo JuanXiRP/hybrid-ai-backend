@@ -138,7 +138,14 @@ userSchema.pre("save", async function (next) {
   }
 });
 
+// A Google-only account has no password at all (see the conditional `required` above), and
+// bcrypt.compare THROWS on an undefined hash rather than returning false. Without this guard the
+// throw escapes loginUser's try and the caller gets a 500 instead of a clean 401 — which locked a
+// user out entirely: registering said "already exists" and logging in crashed.
+//
+// Also covers the case where the document was fetched without `.select('+password')`.
 userSchema.methods.matchPassword = async function (enteredPassword) {
+  if (!this.password) return false;
   return await bcrypt.compare(enteredPassword, this.password);
 };
 

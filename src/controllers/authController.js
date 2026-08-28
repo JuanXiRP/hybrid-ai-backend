@@ -71,7 +71,23 @@ export const loginUser = async (req, res) => {
 
         const user = await User.findOne({ email }).select('+password');
 
-        if (!user || !(await user.matchPassword(password))) {
+        if (!user) {
+            return res.status(401).json({ success: false, message: 'Invalid credentials' });
+        }
+
+        // An account created through Google has no password to compare against. Saying so is far
+        // more useful than "Invalid credentials", which sends the user round the loop of trying a
+        // password that never existed. This does reveal that the account exists — a deliberate
+        // trade-off, and no worse than registerUser, which already answers "User already exists
+        // with that email".
+        if (!user.password && user.googleId) {
+            return res.status(401).json({
+                success: false,
+                message: 'This account uses Google Sign-In. Continue with Google.',
+            });
+        }
+
+        if (!(await user.matchPassword(password))) {
             return res.status(401).json({ success: false, message: 'Invalid credentials' });
         }
 
