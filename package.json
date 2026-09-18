@@ -1,0 +1,67 @@
+{
+  "name": "hybrid-ai-backend",
+  "version": "1.0.0",
+  "main": "src/server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "nodemon src/server.js",
+    "test": "jest",
+    "test:coverage": "jest --coverage",
+    "lint": "eslint .",
+    "format:check": "prettier --check \"{src,tests,scripts}/**/*.{js,cjs}\" \"*.js\"",
+    "format:write": "prettier --write \"{src,tests,scripts}/**/*.{js,cjs}\" \"*.js\""
+  },
+  "jest": {
+    "testEnvironment": "node",
+    "testMatch": [
+      "<rootDir>/src/**/*.test.js"
+    ],
+    "globalSetup": "<rootDir>/tests/globalSetup.cjs",
+    "globalTeardown": "<rootDir>/tests/globalTeardown.cjs",
+    "setupFilesAfterEnv": [
+      "<rootDir>/tests/setupAfterEnv.js"
+    ],
+    "moduleNameMapper": {
+      "^@test/(.*)$": "<rootDir>/tests/$1"
+    },
+    "testTimeout": 30000,
+    "collectCoverageFrom": [
+      "src/**/*.js",
+      "!src/server.js",
+      "!src/config/**/*.js"
+    ],
+    "coverageThreshold": {
+      "global": {
+        "branches": 80,
+        "functions": 80,
+        "lines": 80,
+        "statements": 80
+      }
+    }
+  },
+  "dependencies": {
+    "@google/generative-ai": "^0.24.1",
+    "bcryptjs": "^3.0.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "google-auth-library": "^10.6.2",
+    "helmet": "^7.1.0",
+    "jsonwebtoken": "^9.0.3",
+    "mongoose": "^8.3.2"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.29.7",
+    "@babel/preset-env": "^7.29.7",
+    "@eslint/js": "^9.39.5",
+    "babel-jest": "^30.4.1",
+    "eslint": "^9.1.1",
+    "globals": "^14.0.0",
+    "jest": "^30.4.2",
+    "mongodb-memory-server": "^11.2.0",
+    "nodemon": "^3.1.0",
+    "prettier": "^3.8.3",
+    "supertest": "^7.2.2"
+  }
+}

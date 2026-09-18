@@ -1,0 +1,63 @@
+name: Backend CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+
+jobs:
+  quality-and-testing:
+    name: Code Quality and Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        # 'npm ci' ensures reproducible builds by strictly adhering to package-lock.json
+        run: npm ci
+
+      - name: Security audit for dependencies
+        # Fails the pipeline if vulnerabilities of 'high' or 'critical' level are found
+        run: npm audit --audit-level=high
+
+      # Split from lint so a formatting failure does not mask the lint results.
+      - name: Check formatting
+        run: npm run format:check
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Run tests with coverage
+        run: npm run test:coverage
+        env:
+          JWT_SECRET: ci-test-secret
+
+  security-sast:
+    name: Static Application Security Testing
+    runs-on: ubuntu-latest
+    permissions:
+      # Required for CodeQL to upload findings to the GitHub Security tab
+      actions: read
+      contents: read
+      security-events: write
+    
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          # Targets both standard JS and TypeScript
+          languages: 'javascript-typescript'
+          
+      - name: Perform CodeQL Analysis
+        # Scans the codebase for semantic vulnerabilities (SQLi, XSS, insecure cryptography)
+        uses: github/codeql-action/analyze@v3
+
+          

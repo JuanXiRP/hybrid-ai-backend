@@ -1,0 +1,20 @@
+# Dependencies
+node_modules/
+
+# Environment variables (CRITICAL SECURITY)
+.env
+
+# Test coverage output
+coverage/
+
+# Logs
+logs
+*.log
+npm-debug.log*
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Claude Code local config
+CLAUDE.md
