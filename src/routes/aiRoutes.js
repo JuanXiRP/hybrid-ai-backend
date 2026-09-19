@@ -12,13 +12,19 @@ import {
   requirePlanQuota,
   requireChatQuota,
 } from "../middleware/entitlementMiddleware.js";
+import { aiLimiter, generativeLimiter } from "../middleware/rateLimit.js";
 
 const router = express.Router();
+
+// Per-IP abuse ceiling for the whole AI surface, distinct from the per-user freemium quota the
+// entitlement guards below enforce: a premium athlete is unlimited by quota but not by this.
+router.use(aiLimiter);
 
 // The onboarding plan is the one free generation (FREE_PLAN_LIMIT), so a new user completes
 // onboarding without paying. Regenerating afterwards requires premium.
 router.post(
   "/generate-plan",
+  generativeLimiter,
   protect,
   requireActiveAccess,
   requirePlanQuota,
@@ -30,6 +36,7 @@ router.post(
 // this route needs is mounted by path in app.js, before the global express.json().
 router.post(
   "/import-plan",
+  generativeLimiter,
   protect,
   requireActiveAccess,
   requirePlanQuota,
@@ -46,7 +53,8 @@ router.post(
 
 // Reading the conversation back is deliberately NOT behind the entitlement guards: an athlete
 // whose trial has lapsed still owns everything they have already said, exactly as the workout
-// routes leave their reads open.
+// routes leave their reads open. It is still rate-limited — `aiLimiter` above covers every route
+// on this router — because it authenticates a caller and reads the database on each call.
 router.get("/chat/history", protect, getChatHistory);
 
 export default router;

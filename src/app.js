@@ -9,13 +9,24 @@ import aiRoutes from "./routes/aiRoutes.js";
 import authRoutes from "./routes/authRoutes.js";
 import workoutPlanRoutes from "./routes/workoutPlanRoutes.js";
 import billingRoutes from "./routes/billingRoutes.js";
+import { globalLimiter } from "./middleware/rateLimit.js";
 
 dotenv.config();
 
 const app = express();
 
+// Render terminates TLS and forwards, so without this every request looks like it comes from the
+// proxy: req.ip would be the proxy's address and the rate limiters below would put ALL users in
+// one bucket, letting a single abuser lock out everybody. `1` — exactly one hop — rather than
+// `true`, which would trust a client-supplied X-Forwarded-For and make the limits spoofable.
+app.set("trust proxy", 1);
+
 app.use(helmet());
 app.use(cors());
+
+// The app-wide ceiling. Mounted before the routers so every route inherits it, including the
+// ones whose own limiter is stricter.
+app.use(globalLimiter);
 
 // Plan import carries a base64 PDF or photo, which blows past the 100 kb default of
 // express.json(). Mounting a wider parser on that exact path BEFORE the global one is what makes
