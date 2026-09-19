@@ -84,6 +84,57 @@ describe("POST /api/workouts/strength", () => {
     expect(String(stored.userId)).not.toBe(String(someoneElse));
   });
 
+  // The plan markers are what let the coach hydrator know WHICH session was completed instead
+  // of counting how many exist this week. They are optional so that an older client keeps
+  // working, which makes both halves of this worth pinning.
+  it("stores the plan markers when the client sends them", async () => {
+    // Arrange
+    const { token } = await registerTestUser();
+    const planId = new mongoose.Types.ObjectId();
+
+    // Act
+    const res = await makeStrengthWorkoutRequest(
+      token,
+      strengthPayload({ planId, weekNumber: 2, dayIndex: 0 }),
+    );
+
+    // Assert
+    expect(res.status).toBe(201);
+    const stored = await WorkoutStrength.findOne();
+    expect(String(stored.planId)).toBe(String(planId));
+    expect(stored.weekNumber).toBe(2);
+    expect(stored.dayIndex).toBe(0);
+  });
+
+  it("leaves the plan markers null for a client that does not send them", async () => {
+    // Arrange
+    const { token } = await registerTestUser();
+
+    // Act
+    await makeStrengthWorkoutRequest(token, strengthPayload());
+
+    // Assert
+    const stored = await WorkoutStrength.findOne();
+    expect(stored.planId).toBeNull();
+    expect(stored.weekNumber).toBeNull();
+    expect(stored.dayIndex).toBeNull();
+  });
+
+  it("rejects a day index that cannot address a plan day", async () => {
+    // Arrange
+    const { token } = await registerTestUser();
+
+    // Act
+    const res = await makeStrengthWorkoutRequest(
+      token,
+      strengthPayload({ weekNumber: 0, dayIndex: -1 }),
+    );
+
+    // Assert
+    expect(res.status).toBe(400);
+    expect(await WorkoutStrength.countDocuments()).toBe(0);
+  });
+
   it("answers 400 when a required field is missing", async () => {
     // Arrange — routineType is required by the schema
     const { token } = await registerTestUser();
@@ -128,6 +179,38 @@ describe("POST /api/workouts/run", () => {
     expect(String(stored.userId)).toBe(String(id));
   });
 
+  it("stores the plan markers on a run when the client sends them", async () => {
+    // Arrange
+    const { token } = await registerTestUser();
+    const planId = new mongoose.Types.ObjectId();
+
+    // Act
+    const res = await makeRunWorkoutRequest(
+      token,
+      runPayload({ planId, weekNumber: 1, dayIndex: 2 }),
+    );
+
+    // Assert
+    expect(res.status).toBe(201);
+    const stored = await WorkoutRun.findOne();
+    expect(String(stored.planId)).toBe(String(planId));
+    expect(stored.weekNumber).toBe(1);
+    expect(stored.dayIndex).toBe(2);
+  });
+
+  it("leaves the plan markers null on a run that omits them", async () => {
+    // Arrange
+    const { token } = await registerTestUser();
+
+    // Act
+    await makeRunWorkoutRequest(token, runPayload());
+
+    // Assert
+    const stored = await WorkoutRun.findOne();
+    expect(stored.weekNumber).toBeNull();
+    expect(stored.dayIndex).toBeNull();
+  });
+
   it("ignores a client-supplied userId", async () => {
     // Arrange
     const { token, id } = await registerTestUser();
@@ -139,6 +222,57 @@ describe("POST /api/workouts/run", () => {
     // Assert
     const stored = await WorkoutRun.findOne();
     expect(String(stored.userId)).toBe(String(id));
+  });
+
+  // The plan markers are what let the coach hydrator know WHICH session was completed instead
+  // of counting how many exist this week. They are optional so that an older client keeps
+  // working, which makes both halves of this worth pinning.
+  it("stores the plan markers when the client sends them", async () => {
+    // Arrange
+    const { token } = await registerTestUser();
+    const planId = new mongoose.Types.ObjectId();
+
+    // Act
+    const res = await makeStrengthWorkoutRequest(
+      token,
+      strengthPayload({ planId, weekNumber: 2, dayIndex: 0 }),
+    );
+
+    // Assert
+    expect(res.status).toBe(201);
+    const stored = await WorkoutStrength.findOne();
+    expect(String(stored.planId)).toBe(String(planId));
+    expect(stored.weekNumber).toBe(2);
+    expect(stored.dayIndex).toBe(0);
+  });
+
+  it("leaves the plan markers null for a client that does not send them", async () => {
+    // Arrange
+    const { token } = await registerTestUser();
+
+    // Act
+    await makeStrengthWorkoutRequest(token, strengthPayload());
+
+    // Assert
+    const stored = await WorkoutStrength.findOne();
+    expect(stored.planId).toBeNull();
+    expect(stored.weekNumber).toBeNull();
+    expect(stored.dayIndex).toBeNull();
+  });
+
+  it("rejects a day index that cannot address a plan day", async () => {
+    // Arrange
+    const { token } = await registerTestUser();
+
+    // Act
+    const res = await makeStrengthWorkoutRequest(
+      token,
+      strengthPayload({ weekNumber: 0, dayIndex: -1 }),
+    );
+
+    // Assert
+    expect(res.status).toBe(400);
+    expect(await WorkoutStrength.countDocuments()).toBe(0);
   });
 
   it("answers 400 when a required field is missing", async () => {

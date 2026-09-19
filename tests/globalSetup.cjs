@@ -49,4 +49,11 @@ module.exports = async () => {
   setEnv("FREE_TRIAL_DAYS", "14");
   setEnv("FREE_PLAN_LIMIT", "1");
   setEnv("FREE_CHAT_MESSAGES_PER_DAY", "2");
+
+  // Same reasoning for the coach context budgets: a suite asserting on the window it sends must
+  // not change answer because a developer tuned these in their own .env.
+  setEnv("CHAT_WINDOW_MAX_TURNS", "20");
+  setEnv("CHAT_WINDOW_MAX_CHARS", "8000");
+  setEnv("CHAT_ROUTINE_CONTEXT_MAX_CHARS", "2000");
+  setEnv("CHAT_HISTORY_PAGE_SIZE", "50");
 };

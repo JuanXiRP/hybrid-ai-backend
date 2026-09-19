@@ -4,6 +4,7 @@ import {
   generatePlan,
   importPlan,
   chatWithCoach,
+  getChatHistory,
 } from "../controllers/aiController.js";
 import { protect } from "../middleware/authMiddleware.js";
 import {
@@ -42,5 +43,10 @@ router.post(
   requireChatQuota,
   chatWithCoach,
 );
+
+// Reading the conversation back is deliberately NOT behind the entitlement guards: an athlete
+// whose trial has lapsed still owns everything they have already said, exactly as the workout
+// routes leave their reads open.
+router.get("/chat/history", protect, getChatHistory);
 
 export default router;

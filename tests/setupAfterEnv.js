@@ -7,7 +7,7 @@ jest.setTimeout(30000);
 // clearAllMocks, NOT resetAllMocks. In jest-mock 30, mockReset() deletes the mock's entry from
 // the config registry, and jest.fn(impl) stores impl in that same registry — so resetAllMocks
 // would wipe the implementations that suites install in their jest.mock factories
-// (e.g. `processChatMessage: jest.fn().mockResolvedValue('AI reply')`), and those suites would
+// (e.g. `generateCoachReply: jest.fn().mockResolvedValue('AI reply')`), and those suites would
 // start getting undefined back. mockClear only drops recorded calls, which is what per-test
 // isolation actually needs.
 //

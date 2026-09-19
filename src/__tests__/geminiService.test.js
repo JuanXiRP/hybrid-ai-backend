@@ -26,9 +26,9 @@ jest.mock("@google/generative-ai", () => ({
 }));
 
 import {
+  generateCoachReply,
   generateWorkoutPlan,
   importAndCompleteWorkoutPlan,
-  processChatMessage,
 } from "../services/geminiService.js";
 import { silenceConsole } from "@test/helpers/console.js";
 
@@ -256,21 +256,24 @@ describe("importAndCompleteWorkoutPlan — contents and prompt", () => {
   });
 });
 
-describe("processChatMessage — context injection", () => {
-  it("injects plan context into the system instruction and maps history to contents", async () => {
+describe("generateCoachReply — payload assembly", () => {
+  it("sends the hydrated routine, then the history, then the new message", async () => {
+    // Arrange
+    const routineContext =
+      "PLAN: both — week 2 of 8 (base).\nNEXT SESSION: Lower Body — Back Squat 4x6 @RPE 8";
+
     // Act
-    const reply = await processChatMessage(
-      [
+    const reply = await generateCoachReply({
+      routineContext,
+      history: [
         { role: "user", content: "Hola" },
         { role: "model", content: "¡Hola! ¿En qué te ayudo?" },
       ],
-      "¿por qué tanto RPE el día 1?",
-      "Goal: both, Duration: 8 weeks. Week 1 Day 1 - Squats RPE 7",
-    );
+      message: "¿qué toca hoy?",
+    });
 
     // Assert
     expect(reply).toBe("coach reply");
-
     expect(mockGetGenerativeModel).toHaveBeenCalledWith(
       expect.objectContaining({
         systemInstruction: expect.stringContaining("current training plan"),
@@ -278,29 +281,23 @@ describe("processChatMessage — context injection", () => {
     );
     expect(mockGetGenerativeModel).toHaveBeenCalledWith(
       expect.objectContaining({
-        systemInstruction: expect.stringContaining("Squats RPE 7"),
+        systemInstruction: expect.stringContaining("Back Squat 4x6 @RPE 8"),
       }),
     );
-
     expect(mockStartChat).toHaveBeenCalledWith(
       expect.objectContaining({
         history: [
           { role: "user", parts: [{ text: "Hola" }] },
-          {
-            role: "model",
-            parts: [{ text: "¡Hola! ¿En qué te ayudo?" }],
-          },
+          { role: "model", parts: [{ text: "¡Hola! ¿En qué te ayudo?" }] },
         ],
       }),
     );
-    expect(mockSendMessage).toHaveBeenCalledWith(
-      "¿por qué tanto RPE el día 1?",
-    );
+    expect(mockSendMessage).toHaveBeenCalledWith("¿qué toca hoy?");
   });
 
-  it("omits the plan block from the system instruction when no plan context is given", async () => {
+  it("omits the routine block entirely when the athlete has no plan", async () => {
     // Act
-    await processChatMessage([], "hola", "");
+    await generateCoachReply({ message: "hola" });
 
     // Assert
     expect(mockGetGenerativeModel).not.toHaveBeenCalledWith(
@@ -310,6 +307,43 @@ describe("processChatMessage — context injection", () => {
     );
     expect(mockStartChat).toHaveBeenCalledWith(
       expect.objectContaining({ history: [] }),
+    );
+  });
+
+  it("asks for prose, never for JSON", async () => {
+    // Arrange / Act
+    await generateCoachReply({ message: "hola" });
+
+    // Assert: the plan flows pin a responseSchema; a chat reply that arrived as JSON would be
+    // rendered to the athlete verbatim, braces and all.
+    const { generationConfig } = lastModelConfig();
+    expect(generationConfig).toEqual(
+      expect.objectContaining({ maxOutputTokens: expect.any(Number) }),
+    );
+    expect(generationConfig.responseMimeType).toBeUndefined();
+    expect(generationConfig.responseSchema).toBeUndefined();
+  });
+
+  it("retries a busy model and rebuilds the chat session per attempt", async () => {
+    // Arrange: a reused session would replay the user turn on the second send
+    mockSendMessage.mockRejectedValueOnce({ status: 503 });
+
+    // Act
+    const reply = await generateCoachReply({ message: "hola" });
+
+    // Assert
+    expect(reply).toBe("coach reply");
+    expect(mockStartChat).toHaveBeenCalledTimes(2);
+    expect(consoleSpies.warn).toHaveBeenCalled();
+  });
+
+  it("refuses an empty reply instead of storing a silent turn", async () => {
+    // Arrange: the 2.5 models can answer with no text when the output budget is exhausted
+    mockSendMessage.mockResolvedValueOnce({ response: { text: () => "  " } });
+
+    // Act / Assert
+    await expect(generateCoachReply({ message: "hola" })).rejects.toThrow(
+      "empty coach reply",
     );
   });
 });

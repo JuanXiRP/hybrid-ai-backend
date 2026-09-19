@@ -1,6 +1,6 @@
 // Free tier: 1 generated plan, 2 coach messages per UTC day, 14-day usage window, then
 // read-only. Everything is derived from existing data, so these tests drive the real code
-// paths (WorkoutPlan counts, ChatHistory timestamps, User.createdAt) rather than a counter.
+// paths (WorkoutPlan counts, ChatMessage timestamps, User.createdAt) rather than a counter.
 
 jest.mock("../services/geminiService.js", () =>
   require("@test/mocks/geminiService.js").create(),
@@ -13,13 +13,13 @@ jest.mock("../services/playBillingService.js", () =>
   require("@test/mocks/playBillingService.js").create(),
 );
 
-import ChatHistory from "../models/ChatHistory.js";
+import ChatMessage from "../models/ChatMessage.js";
 import User from "../models/User.js";
 import WorkoutPlan from "../models/WorkoutPlan.js";
 import WorkoutRun from "../models/WorkoutRun.js";
 import {
   generateWorkoutPlan,
-  processChatMessage,
+  generateCoachReply,
 } from "../services/geminiService.js";
 import { isBillingEnabled } from "../services/playBillingService.js";
 import {
@@ -85,7 +85,7 @@ const expireTrial = async (email) => {
 beforeEach(() => {
   resetGeminiMocks();
   generateWorkoutPlan.mockResolvedValue(JSON.stringify({ weeks: [] }));
-  processChatMessage.mockResolvedValue("AI reply");
+  generateCoachReply.mockResolvedValue("AI reply");
   resetPlayBillingMocks();
   isBillingEnabled.mockReturnValue(false);
 });
@@ -152,9 +152,8 @@ describe("chat quota", () => {
       Date.now(),
     );
 
-    // The blocked message never reached Gemini nor the durable log.
-    const history = await ChatHistory.findOne();
-    expect(history.messages.filter((m) => m.role === "user")).toHaveLength(2);
+    // The blocked message never reached Gemini nor the durable transcript.
+    expect(await ChatMessage.countDocuments({ role: "user" })).toBe(2);
   });
 
   it("resets once the messages fall before the current UTC day", async () => {
@@ -165,11 +164,10 @@ describe("chat quota", () => {
     expect((await sendChat(token, "three")).status).toBe(402);
 
     // Backdate yesterday's conversation; the quota counts only today's user turns.
-    const history = await ChatHistory.findOne();
-    history.messages.forEach((m) => {
-      m.timestamp = new Date(Date.now() - 2 * DAY_MS);
-    });
-    await history.save();
+    await ChatMessage.updateMany(
+      {},
+      { $set: { createdAt: new Date(Date.now() - 2 * DAY_MS) } },
+    );
 
     // Act
     const res = await sendChat(token, "fresh day");

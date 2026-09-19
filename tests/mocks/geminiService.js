@@ -18,12 +18,12 @@
 
 export const generateWorkoutPlan = jest.fn();
 export const importAndCompleteWorkoutPlan = jest.fn();
-export const processChatMessage = jest.fn();
+export const generateCoachReply = jest.fn();
 
 export const create = () => ({
   generateWorkoutPlan,
   importAndCompleteWorkoutPlan,
-  processChatMessage,
+  generateCoachReply,
 });
 
 /**
@@ -37,5 +37,5 @@ export const create = () => ({
 export const resetGeminiMocks = () => {
   generateWorkoutPlan.mockReset();
   importAndCompleteWorkoutPlan.mockReset();
-  processChatMessage.mockReset();
+  generateCoachReply.mockReset();
 };

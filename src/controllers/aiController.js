@@ -1,14 +1,9 @@
-import ChatHistory from "../models/ChatHistory.js";
 import WorkoutPlan from "../models/WorkoutPlan.js";
+import { getCoachHistory, sendCoachMessage } from "../services/chatService.js";
 import {
   generateWorkoutPlan,
   importAndCompleteWorkoutPlan,
-  processChatMessage,
 } from "../services/geminiService.js";
-
-// Size limits for coach chat context (no tokenizer available; ~4 chars/token heuristic)
-const MAX_PLAN_CONTEXT_CHARS = 6000; // ~1.5k tokens
-const MAX_HISTORY_TURNS = 20; // keep only the most recent turns
 
 // Limits for the plan-import payload. The route mounts a 12 MB body parser (see app.js); these
 // caps are the real contract, kept well below it so a rejected upload fails as a readable 400
@@ -73,26 +68,6 @@ const validateImportPayload = ({ providedDomain, sourceText, attachments }) => {
   }
 
   return null;
-};
-
-// Tolerant sanitization of client-sent conversation history.
-// Keeps valid { role: 'user' | 'model', content: string } turns, drops leading 'model'
-// turns (Gemini history must start with 'user') and a trailing 'user' turn (the current
-// message is appended separately, avoiding two consecutive user turns).
-const sanitizeHistory = (arr) => {
-  const turns = (Array.isArray(arr) ? arr : [])
-    .filter(
-      (m) =>
-        m &&
-        (m.role === "user" || m.role === "model") &&
-        typeof m.content === "string" &&
-        m.content.trim() !== "",
-    )
-    .map((m) => ({ role: m.role, content: m.content }));
-
-  while (turns.length && turns[0].role === "model") turns.shift();
-  while (turns.length && turns[turns.length - 1].role === "user") turns.pop();
-  return turns;
 };
 
 // @desc    Generate a workout plan using Gemini AI and save it to DB
@@ -211,71 +186,79 @@ export const importPlan = async (req, res) => {
   }
 };
 
-// @desc    Send message to AI Coach and update history
+// @desc    Send a message to the AI coach
 // @route   POST /api/ai/chat
 // @access  Private
+//
+// `plan_context` and `history` are still ACCEPTED on the wire — shipped Android builds send both
+// — but deliberately ignored. The server now derives the athlete's routine itself
+// (routineContextService) and owns the transcript (chatService), which is what stopped the coach
+// forgetting a conversation the moment the user switched tabs. Do not reintroduce them: a
+// client-supplied 'model' turn is text the assistant never said, and a client-supplied routine
+// is a second source of truth for facts the database already holds.
 export const chatWithCoach = async (req, res) => {
   try {
-    const { message, plan_context, history: clientHistory } = req.body;
-    const userId = req.user._id;
+    const { message } = req.body;
 
-    if (!message)
+    if (typeof message !== "string" || message.trim() === "") {
       return res
         .status(400)
         .json({ success: false, message: "Message is required" });
-
-    // 1. Resolve plan context: prefer the client-sent text summary; otherwise fall back to
-    // the persisted active plan (previous behavior). Truncate to bound prompt cost.
-    let planContext =
-      typeof plan_context === "string" ? plan_context.trim() : "";
-    if (!planContext) {
-      const activeRoutine = await WorkoutPlan.findOne({ userId }).sort({
-        createdAt: -1,
-      });
-      if (activeRoutine) planContext = JSON.stringify(activeRoutine);
-    }
-    if (planContext.length > MAX_PLAN_CONTEXT_CHARS) {
-      planContext =
-        planContext.slice(0, MAX_PLAN_CONTEXT_CHARS) + "… [truncated]";
     }
 
-    // 2. Fetch or create the durable chat history log
-    let history = await ChatHistory.findOne({ userId });
-    if (!history) {
-      history = await ChatHistory.create({ userId, messages: [] });
-    }
-
-    // 3. Resolve conversation history: prefer the client-sent turns; otherwise fall back to
-    // the persisted log (previous behavior). Keep only the most recent turns.
-    const hasClientHistory =
-      Array.isArray(clientHistory) && clientHistory.length > 0;
-    const conversation = (
-      hasClientHistory ? sanitizeHistory(clientHistory) : history.messages
-    ).slice(-MAX_HISTORY_TURNS);
-
-    // 4. Call Gemini via Service
-    const aiResponseText = await processChatMessage(
-      conversation,
-      message,
-      planContext,
-    );
-
-    // 5. Append both messages to the durable log
-    history.messages.push({ role: "user", content: message });
-    history.messages.push({ role: "model", content: aiResponseText });
-    await history.save();
-
-    res.status(200).json({
-      success: true,
-      data: {
-        reply: aiResponseText,
-        timestamp: new Date(),
-      },
+    const { reply, timestamp } = await sendCoachMessage({
+      userId: req.user._id,
+      message: message.trim(),
     });
+
+    res.status(200).json({ success: true, data: { reply, timestamp } });
   } catch (error) {
     console.error("[Chat Controller Error]:", error);
     res
       .status(500)
       .json({ success: false, message: "Error communicating with Coach AI" });
+  }
+};
+
+// @desc    Read the stored coach conversation, newest page first
+// @route   GET /api/ai/chat/history
+// @access  Private
+//
+// Paginates backwards: `before` is the createdAt of the oldest message already on screen, which
+// is how a chat UI loads more as the athlete scrolls up.
+export const getChatHistory = async (req, res) => {
+  try {
+    const { limit, before } = req.query;
+
+    const beforeDate = before ? new Date(before) : null;
+    if (beforeDate && Number.isNaN(beforeDate.getTime())) {
+      return res
+        .status(400)
+        .json({ success: false, message: "`before` must be a valid date" });
+    }
+
+    const { messages, hasMore } = await getCoachHistory({
+      userId: req.user._id,
+      limit,
+      before: beforeDate,
+    });
+
+    res.status(200).json({
+      success: true,
+      data: {
+        // snake_case on the wire, matching the client's @SerialName convention.
+        messages: messages.map((entry) => ({
+          role: entry.role,
+          content: entry.content,
+          created_at: entry.createdAt,
+        })),
+        has_more: hasMore,
+      },
+    });
+  } catch (error) {
+    console.error("[Chat History Error]:", error);
+    res
+      .status(500)
+      .json({ success: false, message: "Error loading the conversation" });
   }
 };
