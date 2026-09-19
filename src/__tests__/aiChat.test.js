@@ -51,7 +51,7 @@ describe("POST /api/ai/chat", () => {
     expect(res.status).toBe(200);
     expect(res.body.data.reply).toBe("AI reply");
 
-    // Idiomatic Jest assertions instead of array indexing (.mock.calls[0])
+    // Idiomatic Jest assertions instead of indexing the internal call array
     expect(processChatMessage).toHaveBeenCalledTimes(1);
     expect(processChatMessage).toHaveBeenCalledWith([], payload.message, "");
 
