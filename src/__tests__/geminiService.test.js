@@ -310,6 +310,50 @@ describe("generateCoachReply — payload assembly", () => {
     );
   });
 
+  it("tells the coach to answer in the athlete's language", async () => {
+    // The instructions are written in English, so without this rule the model answers in English
+    // to a Spanish-speaking athlete using a Spanish UI — which is what it was doing.
+    // Arrange / Act
+    await generateCoachReply({ message: "¿Cuánto peso?" });
+
+    // Assert
+    expect(mockGetGenerativeModel).toHaveBeenCalledWith(
+      expect.objectContaining({
+        systemInstruction: expect.stringContaining(
+          "same language the athlete writes in",
+        ),
+      }),
+    );
+  });
+
+  it("confines the coach to training, and forbids answering anyway", async () => {
+    // Without a scope the coach did arithmetic homework, and every one of those is a paid call.
+    // The "do not answer it anyway" half matters: a model told only to stay on topic will
+    // typically decline and then answer regardless.
+    // Arrange / Act
+    await generateCoachReply({ message: "what is 2+2?" });
+
+    // Assert
+    const { systemInstruction } = lastModelConfig();
+    expect(systemInstruction).toContain("you cover training only");
+    expect(systemInstruction).toContain("out of scope");
+    expect(systemInstruction).toContain("do not answer it anyway");
+  });
+
+  it("keeps the persona when the routine block is attached", async () => {
+    // Arrange / Act
+    await generateCoachReply({
+      message: "¿qué toca?",
+      routineContext: "PLAN: both — week 2 of 8 (base).",
+    });
+
+    // Assert: hydration must extend the persona, never replace it
+    const { systemInstruction } = lastModelConfig();
+    expect(systemInstruction).toContain("same language the athlete writes in");
+    expect(systemInstruction).toContain("current training plan");
+    expect(systemInstruction).toContain("week 2 of 8");
+  });
+
   it("asks for prose, never for JSON", async () => {
     // Arrange / Act
     await generateCoachReply({ message: "hola" });
