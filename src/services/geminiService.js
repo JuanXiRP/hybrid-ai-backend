@@ -312,6 +312,26 @@ ${pastedBlock}${attachmentBlock}
 };
 
 /**
+ * Who the coach is, and the two boundaries it kept crossing without them.
+ *
+ * LANGUAGE: these instructions are written in English, and without an explicit rule the model
+ * answers in English too — so a Spanish-speaking athlete using a Spanish UI was being replied to
+ * in English. Mirroring the athlete rather than pinning a locale is deliberate: the app already
+ * lets them switch language, and this way the coach follows mid-conversation without the client
+ * having to send anything new.
+ *
+ * SCOPE: the previous persona said only "answer concisely and professionally", so the coach
+ * happily did arithmetic homework. Every one of those is a paid Gemini call against an athlete's
+ * daily allowance. The refusal is spelled out to the letter — "do not answer it anyway" — because
+ * a model told merely to stay on topic will typically decline and then answer regardless.
+ */
+const COACH_PERSONA = `You are an elite Hybrid Training AI Coach. Answer concisely and professionally.
+
+LANGUAGE: always reply in the same language the athlete writes in, even though these instructions are in English. If they change language mid-conversation, change with them.
+
+SCOPE: you cover training only — strength and endurance programming, technique, effort and RPE, recovery and mobility, the athlete's own plan and logged sessions, and the nutrition and sleep that surround training. Anything outside that (general knowledge, maths, coding, news, personal matters unrelated to training) is out of scope: say so in one short sentence, offer what you can help with instead, and do not answer it anyway.`;
+
+/**
  * One coach turn.
  *
  * The payload is assembled in the order the API expects and the coach needs:
@@ -334,11 +354,9 @@ export const generateCoachReply = async (
   { history = [], message, routineContext = "" },
   maxRetries = 3,
 ) => {
-  const baseInstruction =
-    "You are an elite Hybrid Training AI Coach. Answer questions concisely and professionally.";
   const systemInstruction = routineContext
-    ? `${baseInstruction}\n\nHere is the user's current training plan, use it to answer questions about their routine:\n${routineContext}`
-    : baseInstruction;
+    ? `${COACH_PERSONA}\n\nHere is the user's current training plan, use it to answer questions about their routine:\n${routineContext}`
+    : COACH_PERSONA;
 
   const model = genAI.getGenerativeModel({
     model: MODEL_ID,
