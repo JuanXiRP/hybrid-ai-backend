@@ -121,14 +121,16 @@ const buildCycleAwareBlock = (userProfile) => {
         - Keep this modulation consistent with the progressive overload of the macrocycle.`;
 };
 
-// Shared call site for both plan flows. `contents` is whatever the SDK accepts: a plain prompt
-// string for text-only generation, or an array of Parts when we also send the athlete's PDF/photos.
-const callWithRetry = async (model, contents, maxRetries) => {
+// The retry policy for every Gemini call in this file: 503 and 429 are the model being busy, so
+// they are worth waiting out (2s, 4s, 8s); anything else is a real error and fails immediately.
+//
+// Extracted from callWithRetry so the coach chat can share it. Chat used to be the only Gemini
+// call in the app with no resilience at all, which made a single transient 503 a user-facing 500
+// in the middle of a conversation.
+const withBackoff = async (operation, maxRetries) => {
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
-      const result = await model.generateContent(contents);
-      const response = await result.response;
-      return response.text();
+      return await operation();
     } catch (error) {
       const isRateLimitOrUnavailable =
         error.status === 503 || error.status === 429;
@@ -148,6 +150,15 @@ const callWithRetry = async (model, contents, maxRetries) => {
     }
   }
 };
+
+// Shared call site for both plan flows. `contents` is whatever the SDK accepts: a plain prompt
+// string for text-only generation, or an array of Parts when we also send the athlete's PDF/photos.
+const callWithRetry = (model, contents, maxRetries) =>
+  withBackoff(async () => {
+    const result = await model.generateContent(contents);
+    const response = await result.response;
+    return response.text();
+  }, maxRetries);
 
 // @desc    Generate a tailored workout plan using Gemini AI with retry logic
 export const generateWorkoutPlan = async (userProfile, maxRetries = 3) => {
@@ -300,32 +311,65 @@ ${pastedBlock}${attachmentBlock}
   return callWithRetry(model, contents, maxRetries);
 };
 
-// @desc    Process a chat message maintaining context
-// planContext is an already-resolved text summary of the user's active plan (may be empty).
-export const processChatMessage = async (
-  chatHistoryMessages,
-  newMessage,
-  planContext = "",
+/**
+ * One coach turn.
+ *
+ * The payload is assembled in the order the API expects and the coach needs:
+ *   1. the system instruction, carrying the athlete's hydrated routine,
+ *   2. the sliding-window history, oldest first,
+ *   3. the new user message, which startChat/sendMessage appends as the final user turn.
+ *
+ * `routineContext` arrives already rendered from routineContextService — this function decides
+ * how to FRAME the athlete's data for the model, never how to derive it. The window arrives
+ * already trimmed by chatWindow, which is what guarantees `history` opens on a 'user' turn.
+ *
+ * @param {Object} params
+ * @param {Array<{role: 'user'|'model', content: string}>} [params.history] oldest-first
+ * @param {string} params.message
+ * @param {string} [params.routineContext] empty string omits the routine block entirely
+ * @param {number} [maxRetries]
+ * @returns {Promise<string>}
+ */
+export const generateCoachReply = async (
+  { history = [], message, routineContext = "" },
+  maxRetries = 3,
 ) => {
   const baseInstruction =
     "You are an elite Hybrid Training AI Coach. Answer questions concisely and professionally.";
-  const systemInstruction = planContext
-    ? `${baseInstruction}\n\nHere is the user's current training plan, use it to answer questions about their routine:\n${planContext}`
+  const systemInstruction = routineContext
+    ? `${baseInstruction}\n\nHere is the user's current training plan, use it to answer questions about their routine:\n${routineContext}`
     : baseInstruction;
 
   const model = genAI.getGenerativeModel({
     model: MODEL_ID,
     systemInstruction,
+    generationConfig: {
+      temperature: 0.6,
+      // No responseMimeType here: a coach reply is prose, unlike the plan flows which pin a JSON
+      // schema. Note the 2.5 family shares this budget with its thinking tokens, so a tight cap
+      // comes back as an empty answer rather than a truncated one — hence the guard below.
+      maxOutputTokens: 2048,
+    },
   });
 
-  // Map prior turns to Gemini contents[]; the current message is appended as the last
-  // 'user' turn by sendMessage below.
-  const formattedHistory = chatHistoryMessages.map((msg) => ({
-    role: msg.role,
-    parts: [{ text: msg.content }],
+  const formattedHistory = history.map((turn) => ({
+    role: turn.role,
+    parts: [{ text: turn.content }],
   }));
 
-  const chat = model.startChat({ history: formattedHistory });
-  const result = await chat.sendMessage(newMessage);
-  return result.response.text();
+  const text = await withBackoff(async () => {
+    // Built inside the retried operation on purpose: a chat session mutates its own history when
+    // a message is sent, so retrying against a reused instance would replay the user turn.
+    const chat = model.startChat({ history: formattedHistory });
+    const result = await chat.sendMessage(message);
+    return result.response.text();
+  }, maxRetries);
+
+  // An empty reply must not reach the transcript: it would be persisted as a model turn and
+  // carried into every later prompt as a silence the coach then has to explain. Thrown outside
+  // the retry so it keeps its own message instead of being reported as a connection failure.
+  if (!text || !text.trim()) {
+    throw new Error("Gemini returned an empty coach reply");
+  }
+  return text;
 };

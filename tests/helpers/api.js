@@ -36,6 +36,8 @@ export const makeGetProfileRequest = (token) =>
 // --- ai -----------------------------------------------------------------------------------
 export const makeAuthenticatedChatRequest = (token, body) =>
   send("post", ROUTES.chat, token, body);
+export const makeChatHistoryRequest = (token, query = "") =>
+  send("get", `${ROUTES.chatHistory}${query}`, token);
 export const makeGeneratePlanRequest = (token, body) =>
   send("post", ROUTES.generatePlan, token, body);
 export const makeImportPlanRequest = (token, body) =>

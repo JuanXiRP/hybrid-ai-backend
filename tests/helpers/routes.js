@@ -13,6 +13,7 @@ export const ROUTES = {
 
   // ai
   chat: "/api/ai/chat",
+  chatHistory: "/api/ai/chat/history",
   generatePlan: "/api/ai/generate-plan",
   importPlan: "/api/ai/import-plan",
 

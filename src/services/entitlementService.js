@@ -2,7 +2,7 @@
 //
 // Every quota is DERIVED from data that already exists rather than tracked in a counter:
 //   - plans used  -> WorkoutPlan.countDocuments
-//   - chat used   -> ChatHistory messages timestamped today (UTC)
+//   - chat used   -> ChatMessage rows written today (UTC)
 //   - trial end   -> User.trialEndsAt, or createdAt + FREE_TRIAL_DAYS
 // That means no reset cron, no drift between counter and reality, and nothing the client can
 // manipulate. It mirrors how `has_completed_onboarding` is derived from WorkoutPlan.exists().
@@ -10,8 +10,8 @@
 // This module returns camelCase domain objects. Translation to the snake_case wire contract
 // happens in billingController, not here.
 
-import ChatHistory from "../models/ChatHistory.js";
 import WorkoutPlan from "../models/WorkoutPlan.js";
+import { countUserMessagesSince } from "../repositories/chatRepository.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -71,15 +71,11 @@ export const applyPlaySubscription = (user, playSubscription) => {
   return user;
 };
 
-const countChatMessagesToday = async (userId, now) => {
-  const history = await ChatHistory.findOne({ userId }).select("messages");
-  if (!history) return 0;
-
-  const since = startOfUtcDay(now);
-  return history.messages.filter(
-    (m) => m.role === "user" && m.timestamp && m.timestamp >= since,
-  ).length;
-};
+// Delegated to the repository so the query and the index that answers it stay together. It used
+// to load the user's entire message array and filter it in memory, which grew with every
+// conversation; it is now an indexed count that never materialises a document.
+const countChatMessagesToday = (userId, now) =>
+  countUserMessagesSince(userId, startOfUtcDay(now));
 
 /**
  * @returns {Promise<{

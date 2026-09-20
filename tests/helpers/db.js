@@ -3,18 +3,28 @@
 
 import mongoose from "mongoose";
 
-// Importing all five models here is load-bearing, not tidiness. `mongoose.connection.collections`
+// Importing every model here is load-bearing, not tidiness. `mongoose.connection.collections`
 // only contains models that have actually been registered, so a dynamic wipe is only complete if
 // every model has been imported first. Registering them centrally is what makes the dynamic loop
 // below correct for every suite, instead of silently skipping whichever models a given test file
 // happened not to import.
 import ChatHistory from "../../src/models/ChatHistory.js";
+import ChatMessage from "../../src/models/ChatMessage.js";
+import ChatSession from "../../src/models/ChatSession.js";
 import User from "../../src/models/User.js";
 import WorkoutPlan from "../../src/models/WorkoutPlan.js";
 import WorkoutRun from "../../src/models/WorkoutRun.js";
 import WorkoutStrength from "../../src/models/WorkoutStrength.js";
 
-const MODELS = [ChatHistory, User, WorkoutPlan, WorkoutRun, WorkoutStrength];
+const MODELS = [
+  ChatHistory,
+  ChatMessage,
+  ChatSession,
+  User,
+  WorkoutPlan,
+  WorkoutRun,
+  WorkoutStrength,
+];
 
 // Each worker gets its own database inside the shared mongod, so suites running in parallel
 // cannot see each other's documents or collide on a unique index.
