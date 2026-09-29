@@ -80,6 +80,17 @@ export const aiLimiter = createRateLimiter({
 });
 
 /**
+ * Logging completed sessions. A person finishes a handful of workouts a day, but the client also
+ * retries a failed sync and re-saves an edited log, so this is sized well above that and well below
+ * what a script would send.
+ */
+export const workoutLimiter = createRateLimiter({
+  limit: 120,
+  message:
+    "Too many workout requests. Please wait a few minutes and try again.",
+});
+
+/**
  * Plan generation and import: the most expensive calls in the product, by a wide margin. A free
  * athlete gets one plan ever, so anything above this is either a retry storm or abuse.
  */
