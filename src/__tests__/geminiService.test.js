@@ -256,6 +256,83 @@ describe("importAndCompleteWorkoutPlan — contents and prompt", () => {
   });
 });
 
+describe("exercise catalog grounding", () => {
+  const profile = {
+    planDuration: 8,
+    goal: "both",
+    fitnessLevel: "intermediate",
+    daysAvailable: 5,
+    weight: 78,
+    sex: "male",
+    injuries: [],
+  };
+  const exerciseItemSchemaOf = (modelConfig) =>
+    daySchemaOf(modelConfig).properties.exercises.items;
+
+  it("adds an optional exerciseId to the exercise schema of both plan flows", async () => {
+    // Act
+    await generateWorkoutPlan(profile);
+    const generationItem = exerciseItemSchemaOf(lastModelConfig());
+    await importAndCompleteWorkoutPlan(profile, {
+      providedDomain: "strength",
+      planDuration: 4,
+      sourceText: "anything",
+      attachments: [],
+    });
+    const importItem = exerciseItemSchemaOf(lastModelConfig());
+
+    // Assert
+    for (const item of [generationItem, importItem]) {
+      expect(item.properties.exerciseId).toBeDefined();
+      expect(item.required).not.toContain("exerciseId");
+    }
+  });
+
+  it("lists the catalog and requires strength days to use it in the generation prompt", async () => {
+    // Act
+    await generateWorkoutPlan(profile);
+
+    // Assert
+    for (const fragment of [
+      "EXERCISE CATALOG",
+      "id | name | equipment",
+      "MUST be chosen from the EXERCISE CATALOG",
+      "Never invent an exercise or a name",
+      "safer alternative from the EXERCISE CATALOG",
+      "Cardio days do not use the catalog",
+      "CRITICAL ARCHITECTURE RULES",
+    ]) {
+      expect(mockGenerateContent).toHaveBeenCalledWith(
+        expect.stringContaining(fragment),
+      );
+    }
+  });
+
+  it("lists the catalog and the imported-half id rule in the import prompt", async () => {
+    // Act
+    await importAndCompleteWorkoutPlan(profile, {
+      providedDomain: "strength",
+      planDuration: 4,
+      sourceText: "anything",
+      attachments: [],
+    });
+
+    // Assert
+    for (const fragment of [
+      "EXERCISE CATALOG",
+      "MUST be chosen from the EXERCISE CATALOG",
+      "add 'exerciseId' ONLY when the exercise is unambiguously",
+      "Keep the athlete's name verbatim",
+      // The FIDELITY rule is untouched.
+      "FIDELITY",
+    ]) {
+      expect(mockGenerateContent).toHaveBeenCalledWith(
+        promptContaining(fragment),
+      );
+    }
+  });
+});
+
 describe("generateCoachReply — payload assembly", () => {
   it("sends the hydrated routine, then the history, then the new message", async () => {
     // Arrange

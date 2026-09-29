@@ -1,6 +1,7 @@
 // src/services/geminiService.js
 import { GoogleGenerativeAI, SchemaType } from "@google/generative-ai";
 import dotenv from "dotenv";
+import { buildPromptCatalog } from "./exerciseCatalogService.js";
 
 dotenv.config();
 
@@ -38,6 +39,13 @@ const buildWorkoutPlanSchema = ({ withSource = false } = {}) => {
           sets: { type: SchemaType.STRING },
           reps: { type: SchemaType.STRING },
           rpe: { type: SchemaType.STRING },
+          // Deliberately not required: cardio days put the run inside an exercise object and
+          // carry no catalog id.
+          exerciseId: {
+            type: SchemaType.STRING,
+            description:
+              "Catalog id of the exercise, copied exactly from the EXERCISE CATALOG. Required for strength exercises; omit it for cardio.",
+          },
         },
         required: ["name", "sets", "reps", "rpe"],
       },
@@ -121,6 +129,13 @@ const buildCycleAwareBlock = (userProfile) => {
         - Keep this modulation consistent with the progressive overload of the macrocycle.`;
 };
 
+// The catalog the model must pick strength exercises from. Built per call because the listing is
+// filtered by the athlete's experience level.
+const buildCatalogBlock = (userProfile) => `
+
+        EXERCISE CATALOG (id | name | equipment | primary muscles | mechanic | level):
+${buildPromptCatalog({ fitnessLevel: userProfile.fitnessLevel })}`;
+
 // The retry policy for every Gemini call in this file: 503 and 429 are the model being busy, so
 // they are worth waiting out (2s, 4s, 8s); anything else is a real error and fails immediately.
 //
@@ -172,6 +187,7 @@ export const generateWorkoutPlan = async (userProfile, maxRetries = 3) => {
 
   const injuriesList = formatInjuries(userProfile);
   const cycleAwareBlock = buildCycleAwareBlock(userProfile);
+  const catalogBlock = buildCatalogBlock(userProfile);
 
   // 🟢 2. Strict Prompt Engineering: Boundary enforcement for hybrid isolation
   const prompt = `
@@ -192,7 +208,11 @@ export const generateWorkoutPlan = async (userProfile, maxRetries = 3) => {
         5. Ensure progressive overload and proper RPE allocation across weeks.
 
         INJURY SAFETY:
-        6. Respect the listed injuries/limitations: avoid or regress any contraindicated movement and program a safer alternative. If "None reported", program normally.${cycleAwareBlock}
+        6. Respect the listed injuries/limitations: avoid or regress any contraindicated movement and program a safer alternative from the EXERCISE CATALOG. If "None reported", program normally.
+
+        EXERCISE SELECTION:
+        7. On 'strength' days every exercise MUST be chosen from the EXERCISE CATALOG below. Copy its 'exerciseId' and 'name' exactly as listed. Never invent an exercise or a name.
+        8. Cardio days do not use the catalog: they carry no 'exerciseId'.${cycleAwareBlock}${catalogBlock}
     `;
 
   return callWithRetry(model, prompt, maxRetries);
@@ -242,6 +262,7 @@ export const importAndCompleteWorkoutPlan = async (
   const { own, missing, missingLabel } = DOMAIN_LABELS[providedDomain];
   const injuriesList = formatInjuries(userProfile);
   const cycleAwareBlock = buildCycleAwareBlock(userProfile);
+  const catalogBlock = buildCatalogBlock(userProfile);
 
   const pastedBlock = sourceText
     ? `
@@ -297,7 +318,16 @@ ${pastedBlock}${attachmentBlock}
         INJURY SAFETY:
         9. Respect the listed injuries/limitations in the ${missing} half you author: avoid or regress any
            contraindicated movement and program a safer alternative. Do NOT alter the imported half for this
-           reason. If "None reported", program normally.${cycleAwareBlock}
+           reason. If "None reported", program normally.
+
+        EXERCISE SELECTION:
+        10. Every strength exercise YOU author MUST be chosen from the EXERCISE CATALOG below. Copy its
+            'exerciseId' and 'name' exactly as listed. Never invent an exercise or a name. When the injury
+            rule calls for a safer alternative, pick it from the catalog. Cardio days do not use the catalog
+            and carry no 'exerciseId'.
+        11. For the athlete's imported exercises, add 'exerciseId' ONLY when the exercise is unambiguously
+            the same movement as a catalog entry. Keep the athlete's name verbatim. Otherwise omit
+            'exerciseId'.${cycleAwareBlock}${catalogBlock}
     `;
 
   // Attachments first so the model reads the source material before the instructions.

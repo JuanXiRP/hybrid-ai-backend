@@ -1,4 +1,5 @@
 import WorkoutPlan from "../models/WorkoutPlan.js";
+import { normalizePlanExercises } from "../services/exerciseCatalogService.js";
 import { getCoachHistory, sendCoachMessage } from "../services/chatService.js";
 import {
   generateWorkoutPlan,
@@ -70,6 +71,18 @@ const validateImportPayload = ({ providedDomain, sourceText, attachments }) => {
   return null;
 };
 
+// Stamps strength exercises with their catalog id. A count of unresolved exercises is logged so a
+// drifting hit rate is visible, but never the names: they come from a user's prompt and profile.
+const normalizeWeeks = (weeks) => {
+  const { weeks: normalizedWeeks, unresolved } = normalizePlanExercises(weeks);
+  if (unresolved > 0) {
+    console.warn(
+      `[Exercise Catalog] ${unresolved} generated exercise(s) did not match the catalog`,
+    );
+  }
+  return normalizedWeeks;
+};
+
 // @desc    Generate a workout plan using Gemini AI and save it to DB
 // @route   POST /api/ai/generate-plan
 // @access  Public (Pending JWT implementation)
@@ -91,13 +104,15 @@ export const generatePlan = async (req, res) => {
     // Direct parsing is safe here because responseMimeType guarantees pure JSON
     const parsedData = JSON.parse(rawAiResponse);
 
+    // Fallback in case the AI wraps the array in a "weeks" property or sends it directly
+    const weeks = normalizeWeeks(parsedData.weeks || parsedData);
+
     // 2. Persist the newly generated plan in MongoDB
     const newPlan = await WorkoutPlan.create({
       userId,
       durationWeeks: planDuration,
       goal,
-      // Fallback in case the AI wraps the array in a "weeks" property or sends it directly
-      weeks: parsedData.weeks || parsedData,
+      weeks,
     });
 
     // 201 Created status code for successful database insertion
@@ -170,7 +185,7 @@ export const importPlan = async (req, res) => {
       durationWeeks: planDuration,
       goal,
       origin: "imported",
-      weeks,
+      weeks: normalizeWeeks(weeks),
     });
 
     res.status(201).json({

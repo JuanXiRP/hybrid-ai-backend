@@ -38,6 +38,10 @@ const workoutPlanSchema = new mongoose.Schema(
                 sets: String,
                 reps: String,
                 rpe: String,
+                // Id of the exercise in the vendored free-exercise-db catalog. Null for
+                // cardio, for imported exercises that match no entry unambiguously, and for
+                // every plan created before the catalog existed.
+                exerciseId: { type: String, default: null },
               },
             ],
           },
