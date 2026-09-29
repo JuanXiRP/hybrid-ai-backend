@@ -8,6 +8,7 @@ jest.mock("../services/geminiService.js", () =>
 import User from "../models/User.js";
 import WorkoutPlan from "../models/WorkoutPlan.js";
 import { importAndCompleteWorkoutPlan } from "../services/geminiService.js";
+import { getCatalog } from "../services/exerciseCatalogService.js";
 import {
   makeAuthenticatedChatRequest,
   makeImportPlanRequest,
@@ -247,6 +248,50 @@ describe("POST /api/ai/import-plan — happy path", () => {
     ]);
     expect(days[0].workoutType).toBe("strength");
     expect(days[1].workoutType).toBe("cardio");
+  });
+
+  it("keeps the athlete's names verbatim and keeps or nulls each exerciseId", async () => {
+    // Arrange
+    const { token } = await registerImporter();
+    const entry = getCatalog().list.find((e) => e.category === "strength");
+    const withIds = structuredClone(MERGED_PLAN);
+    withIds.weeks[0].days[0].exercises = [
+      {
+        name: "My coach's squat",
+        sets: "5",
+        reps: "5",
+        rpe: "8",
+        exerciseId: entry.id,
+      },
+      {
+        name: entry.name,
+        sets: "3",
+        reps: "8",
+        rpe: "7",
+        exerciseId: "made_up",
+      },
+      { name: entry.name, sets: "3", reps: "8", rpe: "7" },
+    ];
+    importAndCompleteWorkoutPlan.mockResolvedValue(JSON.stringify(withIds));
+
+    // Act
+    const res = await makeImportPlanRequest(token, {
+      providedDomain: "strength",
+      planDuration: 4,
+      goal: "both",
+      sourceText: "Day A: squats",
+    });
+
+    // Assert
+    expect(res.status).toBe(201);
+    const stored = await WorkoutPlan.findOne().lean();
+    const lifts = stored.weeks[0].days[0].exercises;
+    expect(lifts.map((l) => l.name)).toEqual([
+      "My coach's squat",
+      entry.name,
+      entry.name,
+    ]);
+    expect(lifts.map((l) => l.exerciseId)).toEqual([entry.id, null, null]);
   });
 
   it("falls back to the persisted profile for planDuration and goal", async () => {
