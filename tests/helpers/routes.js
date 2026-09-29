@@ -19,6 +19,7 @@ export const ROUTES = {
 
   // workouts
   strengthWorkout: "/api/workouts/strength",
+  strengthWorkoutUpsert: (clientId) => `/api/workouts/strength/${clientId}`,
   runWorkout: "/api/workouts/run",
 
   // plans

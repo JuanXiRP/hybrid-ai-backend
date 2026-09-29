@@ -46,6 +46,8 @@ export const makeImportPlanRequest = (token, body) =>
 // --- workouts -----------------------------------------------------------------------------
 export const makeStrengthWorkoutRequest = (token, body) =>
   send("post", ROUTES.strengthWorkout, token, body);
+export const makeUpsertStrengthWorkoutRequest = (token, clientId, body) =>
+  send("put", ROUTES.strengthWorkoutUpsert(clientId), token, body);
 export const makeRunWorkoutRequest = (token, body) =>
   send("post", ROUTES.runWorkout, token, body);
 

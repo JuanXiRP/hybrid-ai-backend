@@ -556,6 +556,44 @@ describe("formatRoutineContext", () => {
     expect(block).toContain("RPE 9.0 vs target 7.0 (harder than planned)");
   });
 
+  // The per-set format keeps the exercise-level RPE the client derives from its working sets, which
+  // is the only reason the coach needs no change to read it.
+  it("still reports RPE against target for a log that carries per-set detail", () => {
+    // Arrange: actual 9 against target 7, with the sets the exercise-level figures came from
+    const context = deriveRoutineContext({
+      plan: aPlan(),
+      strengthLogs: [
+        strengthLog(daysBefore(1), {
+          clientId: "c0ffee00-0000-4000-8000-000000000000",
+          durationSec: 3300,
+          exercises: [
+            {
+              exerciseName: "Back Squat",
+              exerciseId: "Barbell_Squat",
+              sets: 2,
+              reps: 6,
+              targetWeight: 0,
+              actualWeight: 110,
+              targetRpe: 7,
+              actualRpe: 9,
+              setLogs: [
+                { type: "warmup", weight: 60, reps: 10 },
+                { type: "normal", weight: 110, reps: 6, actualRpe: 9 },
+              ],
+            },
+          ],
+        }),
+      ],
+      now: NOW,
+    });
+
+    // Act
+    const block = formatRoutineContext(context);
+
+    // Assert
+    expect(block).toContain("RPE 9.0 vs target 7.0 (harder than planned)");
+  });
+
   it("omits run metrics the client never filled in", () => {
     // Arrange: an older client build syncs a run with only its RPE filled in
     const context = deriveRoutineContext({
