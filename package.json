@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "start": "node src/server.js",
-    "dev": "nodemon src/server.js",
+    "dev": "node --watch src/server.js",
     "test": "jest",
     "test:coverage": "jest --coverage",
     "lint": "eslint .",
@@ -61,7 +61,6 @@
     "globals": "^14.0.0",
     "jest": "^30.4.2",
     "mongodb-memory-server": "^11.2.0",
-    "nodemon": "^3.1.0",
     "prettier": "^3.8.3",
     "supertest": "^7.2.2"
   }
