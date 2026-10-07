@@ -23,6 +23,9 @@ const workoutRunSchema = new mongoose.Schema(
     },
     weekNumber: { type: Number, default: null, min: 1 },
     dayIndex: { type: Number, default: null, min: 0 },
+    // An extra session the athlete added on top of the plan. It still carries the week and day it
+    // was done on, but it never closes a plan day: the coach reads it as feedback only.
+    isExtra: { type: Boolean, default: false },
     distance: { type: Number, required: [true, "Distance is required"] },
     duration: { type: Number, required: [true, "Duration is required"] },
 

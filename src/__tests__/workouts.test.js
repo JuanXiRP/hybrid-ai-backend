@@ -234,6 +234,37 @@ describe("PUT /api/workouts/strength/:clientId", () => {
     expect(stored.dayIndex).toBe(0);
   });
 
+  it("stores the extra flag next to the day an extra session was done on", async () => {
+    // Arrange
+    const { token } = await registerTestUser();
+
+    // Act
+    const res = await makeUpsertStrengthWorkoutRequest(
+      token,
+      aClientId(),
+      upsertPayload({ weekNumber: 2, dayIndex: 3, isExtra: true }),
+    );
+
+    // Assert
+    expect(res.status).toBe(200);
+    const stored = await WorkoutStrength.findOne();
+    expect(stored.isExtra).toBe(true);
+    expect(stored.weekNumber).toBe(2);
+    expect(stored.dayIndex).toBe(3);
+  });
+
+  it("reads a session without the extra flag as a planned one", async () => {
+    // Arrange
+    const { token } = await registerTestUser();
+
+    // Act
+    await makeUpsertStrengthWorkoutRequest(token, aClientId(), upsertPayload());
+
+    // Assert
+    const stored = await WorkoutStrength.findOne();
+    expect(stored.isExtra).toBe(false);
+  });
+
   it("updates the same document on a second PUT instead of duplicating it", async () => {
     // Arrange
     const { token } = await registerTestUser();
@@ -548,6 +579,23 @@ describe("POST /api/workouts/run", () => {
     expect(String(stored.planId)).toBe(String(planId));
     expect(stored.weekNumber).toBe(1);
     expect(stored.dayIndex).toBe(2);
+  });
+
+  it("stores the extra flag on a run the athlete added on top of the plan", async () => {
+    // Arrange
+    const { token } = await registerTestUser();
+
+    // Act
+    const res = await makeRunWorkoutRequest(
+      token,
+      runPayload({ weekNumber: 1, dayIndex: 4, isExtra: true }),
+    );
+
+    // Assert
+    expect(res.status).toBe(201);
+    const stored = await WorkoutRun.findOne();
+    expect(stored.isExtra).toBe(true);
+    expect(stored.dayIndex).toBe(4);
   });
 
   it("leaves the plan markers null on a run that omits them", async () => {

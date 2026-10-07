@@ -683,3 +683,56 @@ describe("buildRoutineContext", () => {
     expect(block).not.toContain("21 km"); // the stale run is outside the window
   });
 });
+
+describe("deriveRoutineContext — extra sessions", () => {
+  it("does not close the plan day an extra session names", () => {
+    // Arrange: an extra run logged on the plan's first day
+    const context = deriveRoutineContext({
+      plan: aMarkedPlan(),
+      runLogs: [
+        runLog(daysBefore(0), {
+          weekNumber: 1,
+          dayIndex: 0,
+          planId: PLAN_ID,
+          isExtra: true,
+        }),
+      ],
+      now: NOW,
+    });
+
+    // Assert
+    expect(context.nextSession.dayName).toBe("Lower Body");
+    expect(context.sessionsLoggedThisWeek).toBe(0);
+    expect(context.nextSessionIsExact).toBe(false);
+  });
+
+  it("does not count an unmarked extra session as a worked-through day", () => {
+    // Arrange
+    const context = deriveRoutineContext({
+      plan: aMarkedPlan(),
+      strengthLogs: [strengthLog(daysBefore(0), { isExtra: true })],
+      now: NOW,
+    });
+
+    // Assert
+    expect(context.remainingSessions).toEqual([
+      "Lower Body",
+      "Zone 2 Run",
+      "Upper Body",
+    ]);
+    expect(context.sessionsLoggedThisWeek).toBe(0);
+  });
+
+  it("keeps an extra session in the recent feedback, labelled as extra", () => {
+    // Arrange
+    const context = deriveRoutineContext({
+      plan: aMarkedPlan(),
+      runLogs: [runLog(daysBefore(0), { isExtra: true })],
+      now: NOW,
+    });
+
+    // Assert
+    expect(context.recentFeedback).toHaveLength(1);
+    expect(context.recentFeedback[0]).toContain("extra run");
+  });
+});

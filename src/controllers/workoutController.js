@@ -40,6 +40,7 @@ const UPSERTABLE_STRENGTH_FIELDS = [
   "notes",
   "weekNumber",
   "dayIndex",
+  "isExtra",
   "exercises",
 ];
 
