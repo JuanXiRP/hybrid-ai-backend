@@ -119,7 +119,7 @@ const describeRunSession = (session) => {
 };
 
 const describeSession = (session) =>
-  `${isoDay(session.date)} ${
+  `${isoDay(session.date)} ${session.isExtra ? "extra " : ""}${
     isRunSession(session)
       ? describeRunSession(session)
       : describeStrengthSession(session)
@@ -214,6 +214,10 @@ export const deriveRoutineContext = ({
     startOfUtcDay(new Date(anchor)).getTime() + (currentWeek - 1) * WEEK_MS,
   );
   const sessions = [...strengthLogs, ...runLogs];
+  // An extra session is one the athlete added on top of the plan. It says how training is going,
+  // so it stays in the feedback below, but it never closes a plan day — not by its markers and not
+  // by its date.
+  const planSessions = sessions.filter((session) => !session.isExtra);
 
   // Two kinds of log can exist side by side, and they are attributed differently.
   //
@@ -221,7 +225,7 @@ export const deriveRoutineContext = ({
   // date is irrelevant — logging Monday's session on Wednesday still closes Monday. A marker from
   // another plan is ignored outright, or finishing a block and starting a new one would carry the
   // old plan's progress into the new one.
-  const marked = sessions.filter(
+  const marked = planSessions.filter(
     (session) =>
       Number.isInteger(session.weekNumber) &&
       Number.isInteger(session.dayIndex) &&
@@ -235,7 +239,7 @@ export const deriveRoutineContext = ({
 
   // An UNMARKED session (any client older than these fields) can only be placed by its date, and
   // says nothing about WHICH day it was.
-  const unmarkedThisWeek = sessions.filter(
+  const unmarkedThisWeek = planSessions.filter(
     (session) =>
       !marked.includes(session) && new Date(session.date) >= weekStart,
   ).length;
