@@ -25,9 +25,10 @@ export const registerUser = async (req, res) => {
     } = req.body;
 
     // 1. Check if user already exists
-    const userExists = await User.findOne({ email }).setOptions({
-      sanitizeFilter: true,
-    });
+    // `$eq` makes Mongo compare the value literally, so it can never be read as a query operator.
+    // validateBody already guarantees a string; this holds even if a route loses that middleware,
+    // and it is the form CodeQL (js/sql-injection) recognises.
+    const userExists = await User.findOne({ email: { $eq: email } });
     if (userExists) {
       return res.status(400).json({
         success: false,
@@ -69,9 +70,9 @@ export const loginUser = async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    const user = await User.findOne({ email })
-      .setOptions({ sanitizeFilter: true })
-      .select("+password");
+    const user = await User.findOne({ email: { $eq: email } }).select(
+      "+password",
+    );
 
     if (!user) {
       return res
@@ -140,14 +141,10 @@ export const googleLogin = async (req, res) => {
 
     // 2. Find or create. The stable Google id wins; the email is only a fallback for linking an
     // existing email/password account, and never overrides a different Google identity.
-    let user = await User.findOne({ googleId }).setOptions({
-      sanitizeFilter: true,
-    });
+    let user = await User.findOne({ googleId: { $eq: googleId } });
 
     if (!user) {
-      user = await User.findOne({ email }).setOptions({
-        sanitizeFilter: true,
-      });
+      user = await User.findOne({ email: { $eq: email } });
 
       if (!user) {
         user = await User.create({
