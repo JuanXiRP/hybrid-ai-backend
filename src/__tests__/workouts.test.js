@@ -37,6 +37,69 @@ const runPayload = (overrides = {}) => ({
   ...overrides,
 });
 
+describe("workout body allowlists", () => {
+  it("ignores planId and _id on the legacy strength POST", async () => {
+    // Arrange
+    const { token } = await registerTestUser();
+    const forgedId = new mongoose.Types.ObjectId();
+
+    // Act
+    const res = await makeStrengthWorkoutRequest(
+      token,
+      strengthPayload({ planId: new mongoose.Types.ObjectId(), _id: forgedId }),
+    );
+
+    // Assert
+    expect(res.status).toBe(201);
+    const stored = await WorkoutStrength.findOne();
+    expect(stored.planId).toBeNull();
+    expect(String(stored._id)).not.toBe(String(forgedId));
+  });
+
+  it("accepts the exact run body the Android app sends, placeholder userId included", async () => {
+    // Arrange
+    const { token, id } = await registerTestUser();
+
+    // Act
+    const res = await makeRunWorkoutRequest(token, {
+      userId: "dummy",
+      distance: 5.2,
+      duration: 1800,
+      targetPace: 330,
+      actualPace: 346,
+      elevationGain: 12,
+      rpe: 7,
+      gpsPath: [
+        { lat: 40.4, lng: -3.7 },
+        { lat: 40.41, lng: -3.71 },
+      ],
+      weekNumber: 1,
+      dayIndex: 2,
+      isExtra: false,
+    });
+
+    // Assert
+    expect(res.status).toBe(201);
+    const stored = await WorkoutRun.findOne();
+    expect(String(stored.userId)).toBe(String(id));
+    expect(stored.gpsPath).toHaveLength(2);
+  });
+
+  it("rejects a gpsPath of the wrong shape", async () => {
+    // Arrange
+    const { token } = await registerTestUser();
+
+    // Act
+    const res = await makeRunWorkoutRequest(
+      token,
+      runPayload({ gpsPath: [{ lat: "north", lng: 1 }] }),
+    );
+
+    // Assert
+    expect(res.status).toBe(400);
+  });
+});
+
 describe("POST /api/workouts/strength", () => {
   it("requires authentication", async () => {
     // Act
@@ -89,7 +152,7 @@ describe("POST /api/workouts/strength", () => {
   // The plan markers are what let the coach hydrator know WHICH session was completed instead
   // of counting how many exist this week. They are optional so that an older client keeps
   // working, which makes both halves of this worth pinning.
-  it("stores the plan markers when the client sends them", async () => {
+  it("stores the week and day markers and ignores a client-sent planId", async () => {
     // Arrange
     const { token } = await registerTestUser();
     const planId = new mongoose.Types.ObjectId();
@@ -103,7 +166,8 @@ describe("POST /api/workouts/strength", () => {
     // Assert
     expect(res.status).toBe(201);
     const stored = await WorkoutStrength.findOne();
-    expect(String(stored.planId)).toBe(String(planId));
+    // planId is not part of the accepted body: a client cannot attach a log to a plan.
+    expect(stored.planId).toBeNull();
     expect(stored.weekNumber).toBe(2);
     expect(stored.dayIndex).toBe(0);
   });
@@ -562,7 +626,7 @@ describe("POST /api/workouts/run", () => {
     expect(String(stored.userId)).toBe(String(id));
   });
 
-  it("stores the plan markers on a run when the client sends them", async () => {
+  it("stores the week and day markers on a run and ignores a client-sent planId", async () => {
     // Arrange
     const { token } = await registerTestUser();
     const planId = new mongoose.Types.ObjectId();
@@ -576,7 +640,8 @@ describe("POST /api/workouts/run", () => {
     // Assert
     expect(res.status).toBe(201);
     const stored = await WorkoutRun.findOne();
-    expect(String(stored.planId)).toBe(String(planId));
+    // planId is not part of the accepted body: a client cannot attach a log to a plan.
+    expect(stored.planId).toBeNull();
     expect(stored.weekNumber).toBe(1);
     expect(stored.dayIndex).toBe(2);
   });
@@ -627,7 +692,7 @@ describe("POST /api/workouts/run", () => {
   // The plan markers are what let the coach hydrator know WHICH session was completed instead
   // of counting how many exist this week. They are optional so that an older client keeps
   // working, which makes both halves of this worth pinning.
-  it("stores the plan markers when the client sends them", async () => {
+  it("stores the week and day markers and ignores a client-sent planId", async () => {
     // Arrange
     const { token } = await registerTestUser();
     const planId = new mongoose.Types.ObjectId();
@@ -641,7 +706,8 @@ describe("POST /api/workouts/run", () => {
     // Assert
     expect(res.status).toBe(201);
     const stored = await WorkoutStrength.findOne();
-    expect(String(stored.planId)).toBe(String(planId));
+    // planId is not part of the accepted body: a client cannot attach a log to a plan.
+    expect(stored.planId).toBeNull();
     expect(stored.weekNumber).toBe(2);
     expect(stored.dayIndex).toBe(0);
   });

@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "main": "src/server.js",
   "type": "module",
+  "engines": {
+    "node": ">=22 <25"
+  },
   "scripts": {
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
@@ -50,7 +53,8 @@
     "google-auth-library": "^10.6.2",
     "helmet": "^7.1.0",
     "jsonwebtoken": "^9.0.3",
-    "mongoose": "^8.3.2"
+    "mongoose": "^8.3.2",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@babel/core": "^7.29.7",

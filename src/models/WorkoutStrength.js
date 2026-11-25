@@ -9,7 +9,11 @@ const workoutStrengthSchema = new mongoose.Schema(
       index: true,
     },
     date: { type: Date, default: Date.now },
-    routineType: { type: String, required: [true, "Routine type is required"] },
+    routineType: {
+      type: String,
+      required: [true, "Routine type is required"],
+      maxlength: 200,
+    },
     // Plan markers. Optional, and null for every session logged by a client that predates them.
     //
     // Without these a completed session is just a dated row: the coach hydrator has to GUESS
@@ -39,7 +43,7 @@ const workoutStrengthSchema = new mongoose.Schema(
       {
         // The legacy fields below stay required and are derived by the client from `setLogs`, so
         // everything that reads a session (the coach's routine context) needs no change.
-        exerciseName: { type: String, required: true },
+        exerciseName: { type: String, required: true, maxlength: 200 },
         exerciseId: { type: String, default: null },
         notes: { type: String, maxlength: 1000 },
         sets: { type: Number, required: true },
@@ -76,5 +80,8 @@ workoutStrengthSchema.index(
   { userId: 1, clientId: 1 },
   { unique: true, partialFilterExpression: { clientId: { $type: "string" } } },
 );
+
+// What trainingRepository queries: one athlete's sessions, newest first.
+workoutStrengthSchema.index({ userId: 1, date: -1 });
 
 export default mongoose.model("WorkoutStrength", workoutStrengthSchema);

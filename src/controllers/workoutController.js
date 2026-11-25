@@ -6,11 +6,9 @@ import WorkoutRun from "../models/WorkoutRun.js";
 // @access  Private
 export const createStrengthWorkout = async (req, res) => {
   try {
-    // Inject the verified user ID from the JWT payload
-    const payload = {
-      ...req.body,
-      userId: req.user._id,
-    };
+    // The body is allowlisted by validateBody; the owner always comes from the JWT.
+    const { userId: _ignored, ...fields } = req.body;
+    const payload = { ...fields, userId: req.user._id };
 
     const workout = await WorkoutStrength.create(payload);
 
@@ -115,11 +113,9 @@ export const upsertStrengthWorkout = async (req, res) => {
 // @access  Private
 export const createRunWorkout = async (req, res) => {
   try {
-    // Inject the verified user ID from the JWT payload
-    const payload = {
-      ...req.body,
-      userId: req.user._id,
-    };
+    // The body is allowlisted by validateBody; the owner always comes from the JWT.
+    const { userId: _ignored, ...fields } = req.body;
+    const payload = { ...fields, userId: req.user._id };
 
     const workout = await WorkoutRun.create(payload);
 

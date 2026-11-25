@@ -25,9 +25,18 @@ export const makeLoginRequest = (body) =>
 export const makeGoogleLoginRequest = (body) =>
   send("post", ROUTES.googleLogin, null, body);
 
+// Sends a body exactly as given (a string stays a string), for payloads JSON.stringify cannot make.
+export const makeRawLoginRequest = (rawBody) =>
+  supertest(app)
+    .post(ROUTES.login)
+    .set("Content-Type", "application/json")
+    .send(rawBody);
+
 // --- users --------------------------------------------------------------------------------
-export const makeCreateUserRequest = (body) =>
-  send("post", ROUTES.createUser, null, body);
+export const makeRemovedLegacyCreateUserRequest = (body) =>
+  send("post", ROUTES.removedLegacyCreateUser, null, body);
+export const makeUnknownRouteRequest = () =>
+  send("get", ROUTES.unknownRoute, null);
 export const makeUpdateProfileRequest = (token, body) =>
   send("patch", ROUTES.profile, token, body);
 export const makeGetProfileRequest = (token) =>
@@ -67,6 +76,10 @@ export const makeEntitlementRequest = (token) =>
 // user JWT — hence the distinct parameter name.
 export const makeRtdnRequest = (oidcToken, body) =>
   send("post", ROUTES.rtdn, oidcToken, body);
+
+// No token: the point is that an anonymous caller gets a 401 before the large body is parsed.
+export const makeAnonymousImportPlanRequest = (body) =>
+  send("post", ROUTES.importPlan, null, body);
 
 // --- misc ---------------------------------------------------------------------------------
 export const makeHealthRequest = () => send("get", ROUTES.health, null);

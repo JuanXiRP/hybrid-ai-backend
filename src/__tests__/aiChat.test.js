@@ -25,6 +25,12 @@ beforeEach(() => {
   generateCoachReply.mockResolvedValue("AI reply");
 });
 
+const waitUntil = async (condition) => {
+  for (let attempt = 0; attempt < 200 && !condition(); attempt++) {
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+};
+
 const seedPlan = (userId) =>
   WorkoutPlan.create({
     userId,
@@ -45,6 +51,72 @@ const seedPlan = (userId) =>
   });
 
 describe("POST /api/ai/chat", () => {
+  it("rejects a message over 4000 characters without calling Gemini", async () => {
+    // Arrange
+    const { token } = await registerTestUser();
+
+    // Act
+    const res = await makeAuthenticatedChatRequest(token, {
+      message: "a".repeat(4001),
+    });
+
+    // Assert
+    expect(res.status).toBe(400);
+    expect(generateCoachReply).not.toHaveBeenCalled();
+  });
+
+  it("answers 429 REQUEST_IN_PROGRESS to a second request while the first is running", async () => {
+    // Arrange
+    const { token } = await registerTestUser();
+    let finishFirst;
+    generateCoachReply.mockImplementationOnce(
+      () => new Promise((resolve) => (finishFirst = resolve)),
+    );
+
+    // Act
+    const first = makeAuthenticatedChatRequest(token, { message: "one" }).then(
+      (res) => res,
+    );
+    await waitUntil(() => finishFirst !== undefined);
+    const second = await makeAuthenticatedChatRequest(token, {
+      message: "two",
+    });
+    finishFirst("first reply");
+    const firstRes = await first;
+    const third = await makeAuthenticatedChatRequest(token, {
+      message: "three",
+    });
+
+    // Assert
+    expect(firstRes.status).toBe(200);
+    expect(second.status).toBe(429);
+    expect(second.body.code).toBe("REQUEST_IN_PROGRESS");
+    expect(third.status).toBe(200);
+  });
+
+  it("lets two different users chat at the same time", async () => {
+    // Arrange
+    const [alice, bob] = await Promise.all([
+      registerTestUser(),
+      registerTestUser(),
+    ]);
+    const releases = [];
+    generateCoachReply.mockImplementation(
+      () => new Promise((resolve) => releases.push(resolve)),
+    );
+
+    // Act
+    const pending = [alice, bob].map(({ token }) =>
+      makeAuthenticatedChatRequest(token, { message: "hi" }).then((res) => res),
+    );
+    await waitUntil(() => releases.length === 2);
+    releases.forEach((release) => release("reply"));
+    const results = await Promise.all(pending);
+
+    // Assert
+    expect(results.map((res) => res.status)).toEqual([200, 200]);
+  });
+
   it("rejects a request with no message", async () => {
     // Arrange
     const { token } = await registerTestUser();

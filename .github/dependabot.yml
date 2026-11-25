@@ -1,0 +1,23 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      minor-and-patch:
+        update-types:
+          - minor
+          - patch
+    ignore:
+      # Prettier is pinned to an exact version on purpose: a minor bump changes its output and
+      # turns the format gate red with no source change. Bump it by hand, with a reformat commit.
+      - dependency-name: prettier
+        update-types:
+          - version-update:semver-minor
+          - version-update:semver-patch
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly

@@ -12,9 +12,11 @@
 
 const REQUIRED_VARS = ["MONGO_URI", "JWT_SECRET", "GEMINI_API_KEY"];
 
-// Not fatal, but worth shouting about: with no audience configured, verifyIdToken accepts a token
-// minted for ANY other Google client. Warn rather than exit so local development keeps working.
+// With no audience configured, verifyIdToken accepts a token minted for ANY other Google client.
+// Outside production that only warns, so local development keeps working; in production it is fatal.
 const SECURITY_SENSITIVE_VARS = ["GOOGLE_WEB_CLIENT_ID"];
+
+const MIN_PRODUCTION_JWT_SECRET_LENGTH = 32;
 
 const isBlank = (value) =>
   value === undefined || value === null || String(value).trim() === "";
@@ -32,8 +34,23 @@ export const assertRequiredEnv = (env = process.env) => {
     );
   }
 
+  const isProduction = env.NODE_ENV === "production";
+
+  // A short secret makes every JWT brute-forceable offline. The value is never printed.
+  if (
+    isProduction &&
+    String(env.JWT_SECRET).length < MIN_PRODUCTION_JWT_SECRET_LENGTH
+  ) {
+    throw new Error(
+      `[Config] JWT_SECRET must be at least ${MIN_PRODUCTION_JWT_SECRET_LENGTH} characters in production.`,
+    );
+  }
+
   for (const name of SECURITY_SENSITIVE_VARS) {
     if (isBlank(env[name])) {
+      if (isProduction) {
+        throw new Error(`[Config] ${name} must be set in production.`);
+      }
       console.warn(
         `[Config] ${name} is not set. Google ID tokens will be verified without an ` +
           "audience check, which accepts tokens minted for any other Google client.",

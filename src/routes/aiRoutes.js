@@ -13,6 +13,13 @@ import {
   requireChatQuota,
 } from "../middleware/entitlementMiddleware.js";
 import { aiLimiter, generativeLimiter } from "../middleware/rateLimit.js";
+import { singleFlight } from "../middleware/singleFlight.js";
+import { validateBody } from "../validation/validateBody.js";
+import {
+  chatSchema,
+  generatePlanSchema,
+  importPlanSchema,
+} from "../validation/schemas.js";
 
 const router = express.Router();
 
@@ -26,28 +33,37 @@ router.post(
   "/generate-plan",
   generativeLimiter,
   protect,
+  singleFlight("plan"),
   requireActiveAccess,
   requirePlanQuota,
+  validateBody(generatePlanSchema),
   generatePlan,
 );
 
 // Importing counts against the same FREE_PLAN_LIMIT as generating: a free user gets one plan,
 // whether the AI wrote all of it or only the half they were missing. The oversized body parser
-// this route needs is mounted by path in app.js, before the global express.json().
+// this route needs is mounted here, AFTER `protect` (app.js skips this path in its default
+// parser), so an anonymous caller can never make the server buffer 12 MB. `protect` only reads
+// headers, so it works on a body that has not been parsed yet.
 router.post(
   "/import-plan",
   generativeLimiter,
   protect,
+  singleFlight("plan"),
+  express.json({ limit: "12mb" }),
   requireActiveAccess,
   requirePlanQuota,
+  validateBody(importPlanSchema),
   importPlan,
 );
 
 router.post(
   "/chat",
   protect,
+  singleFlight("chat"),
   requireActiveAccess,
   requireChatQuota,
+  validateBody(chatSchema),
   chatWithCoach,
 );
 

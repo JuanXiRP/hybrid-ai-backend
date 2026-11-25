@@ -1,12 +1,10 @@
 // src/controllers/userController.js
-import jwt from "jsonwebtoken";
 import User from "../models/User.js";
 
-// The only fields a client may write through these endpoints. Entitlement state
+// The only fields a client may write through this endpoint. Entitlement state
 // (isPremium, trialEndsAt, subscription) is owned exclusively by billingController and must
-// never be settable from a request body — spreading req.body into a create/$set would let
+// never be settable from a request body — spreading req.body into a $set would let
 // any authenticated user grant themselves premium.
-const REGISTRATION_FIELDS = ["name", "email", "password"];
 const PROFILE_FIELDS = [
   "age",
   "weight",
@@ -20,6 +18,9 @@ const PROFILE_FIELDS = [
   "last_period_date",
 ];
 
+const MAX_INJURIES = 20;
+const MAX_TEXT_LENGTH = 100;
+
 const pick = (source, allowedKeys) =>
   Object.fromEntries(
     allowedKeys
@@ -27,34 +28,6 @@ const pick = (source, allowedKeys) =>
       .map((key) => [key, source[key]]),
   );
 
-// @desc    Register a new user
-// @route   POST /api/users
-// @access  Public
-export const registerUser = async (req, res) => {
-  try {
-    // 1. Create the user from an allowlist, never the raw body
-    const user = await User.create(pick(req.body, REGISTRATION_FIELDS));
-
-    // 2. Generate the JWT token (fabricamos la llave)
-    const token = jwt.sign(
-      { id: user._id },
-      process.env.JWT_SECRET,
-      { expiresIn: "30d" }, // El token caduca en 30 días
-    );
-
-    // 3. Return the token ALONG with the user data
-    res.status(201).json({
-      success: true,
-      token: token, // <-- AQUÍ ESTÁ EL TOKEN
-      data: user,
-    });
-  } catch (error) {
-    res.status(400).json({
-      success: false,
-      message: error.message,
-    });
-  }
-};
 // @desc    Update user profile with onboarding biometrics
 // @route   PATCH /api/users/profile
 // @access  Private (Requires JWT token)
@@ -88,6 +61,33 @@ export const updateUserProfile = async (req, res) => {
         success: false,
         message:
           "Validation failed: All physical profile fields (age, weight, height, sex, goal, fitnessLevel, daysAvailable, planDuration) are strictly required.",
+      });
+    }
+
+    // 2a. Free-text fields are bounded: they are stored and later interpolated into prompts.
+    const { injuries } = req.body;
+    if (
+      injuries !== undefined &&
+      (!Array.isArray(injuries) ||
+        injuries.length > MAX_INJURIES ||
+        injuries.some(
+          (item) => typeof item !== "string" || item.length > MAX_TEXT_LENGTH,
+        ))
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: `Validation failed: injuries must be at most ${MAX_INJURIES} strings of ${MAX_TEXT_LENGTH} characters.`,
+      });
+    }
+    const textFields = [sex, goal, fitnessLevel];
+    if (
+      textFields.some(
+        (value) => typeof value === "string" && value.length > MAX_TEXT_LENGTH,
+      )
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: `Validation failed: text fields must be at most ${MAX_TEXT_LENGTH} characters.`,
       });
     }
 
