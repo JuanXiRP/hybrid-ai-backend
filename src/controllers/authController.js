@@ -25,7 +25,9 @@ export const registerUser = async (req, res) => {
     } = req.body;
 
     // 1. Check if user already exists
-    const userExists = await User.findOne({ email });
+    const userExists = await User.findOne({ email }).setOptions({
+      sanitizeFilter: true,
+    });
     if (userExists) {
       return res.status(400).json({
         success: false,
@@ -56,7 +58,7 @@ export const registerUser = async (req, res) => {
     });
   } catch (error) {
     console.error("[Register Error]:", error);
-    res.status(500).json({ success: false, message: error.message });
+    res.status(500).json({ success: false, message: "Internal server error" });
   }
 };
 
@@ -67,7 +69,9 @@ export const loginUser = async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    const user = await User.findOne({ email }).select("+password");
+    const user = await User.findOne({ email })
+      .setOptions({ sanitizeFilter: true })
+      .select("+password");
 
     if (!user) {
       return res
@@ -93,49 +97,74 @@ export const loginUser = async (req, res) => {
         .json({ success: false, message: "Invalid credentials" });
     }
 
-    // 🟢 El onboarding se da por completo cuando existe un plan generado
+    // Onboarding counts as complete once a generated plan exists
     const hasPlan = await WorkoutPlan.exists({ userId: user._id });
 
     res.status(200).json({
       success: true,
       token: generateToken(user._id),
-      has_completed_onboarding: !!hasPlan, // 🟢 snake_case, casa con tu @SerialName
+      has_completed_onboarding: !!hasPlan, // snake_case, matching the client's @SerialName
       data: { id: user._id, name: user.name, email: user.email },
     });
   } catch (error) {
     console.error("[Login Error]:", error);
-    res.status(500).json({ success: false, message: error.message });
+    res.status(500).json({ success: false, message: "Internal server error" });
   }
 };
 
 export const googleLogin = async (req, res) => {
   try {
     const { idToken } = req.body;
-    if (!idToken) {
-      return res
-        .status(400)
-        .json({ success: false, message: "idToken is required" });
-    }
 
     // 1. Verify the token with Google (never trust the client)
     const ticket = await googleClient.verifyIdToken({
       idToken,
       audience: process.env.GOOGLE_WEB_CLIENT_ID, // must match Android client's webClientId
     });
-    const { sub: googleId, email, name } = ticket.getPayload();
+    const {
+      sub: googleId,
+      email: rawEmail,
+      email_verified: emailVerified,
+      name,
+    } = ticket.getPayload();
 
-    // 2. Find or create user
-    let user = await User.findOne({ $or: [{ googleId }, { email }] });
-    if (!user) {
-      user = await User.create({
-        googleId,
-        email,
-        name: name || email.split("@")[0],
+    // An unverified address proves nothing about who owns it, and linking by email is only safe
+    // when Google vouches for it.
+    if (emailVerified !== true || !rawEmail) {
+      return res.status(401).json({
+        success: false,
+        message: "Your Google account email is not verified.",
       });
-    } else if (!user.googleId) {
-      // Existing email/password user linking Google: auto-link accounts
-      user.googleId = googleId;
-      await user.save();
+    }
+    const email = rawEmail.toLowerCase();
+
+    // 2. Find or create. The stable Google id wins; the email is only a fallback for linking an
+    // existing email/password account, and never overrides a different Google identity.
+    let user = await User.findOne({ googleId }).setOptions({
+      sanitizeFilter: true,
+    });
+
+    if (!user) {
+      user = await User.findOne({ email }).setOptions({
+        sanitizeFilter: true,
+      });
+
+      if (!user) {
+        user = await User.create({
+          googleId,
+          email,
+          name: name || email.split("@")[0],
+        });
+      } else if (!user.googleId) {
+        // Verified email = proof of ownership: link Google to the existing account.
+        user.googleId = googleId;
+        await user.save();
+      } else {
+        return res.status(409).json({
+          success: false,
+          message: "This email is linked to a different Google account.",
+        });
+      }
     }
 
     // 3. Same onboarding logic as standard login

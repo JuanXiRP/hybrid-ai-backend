@@ -28,12 +28,13 @@ app.use(cors());
 // ones whose own limiter is stricter.
 app.use(globalLimiter);
 
-// Plan import carries a base64 PDF or photo, which blows past the 100 kb default of
-// express.json(). Mounting a wider parser on that exact path BEFORE the global one is what makes
-// it work: body-parser marks the request as read, so the global parser below skips it and every
-// other route keeps the tight default limit. The real per-attachment caps live in aiController.
-app.use("/api/ai/import-plan", express.json({ limit: "12mb" }));
-app.use(express.json());
+// The default 100 kb parser. Plan import carries a base64 PDF or photo and needs a far wider
+// one, but that parser is mounted inside aiRoutes AFTER authentication, so an anonymous caller can
+// never make the server buffer 12 MB. This one steps aside for that exact path.
+const defaultJson = express.json();
+app.use((req, res, next) =>
+  req.path === "/api/ai/import-plan" ? next() : defaultJson(req, res, next),
+);
 
 const DB_PING_TIMEOUT_MS = 2000;
 
@@ -87,5 +88,30 @@ app.use("/api/ai", aiRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/plans", workoutPlanRoutes);
 app.use("/api/billing", billingRoutes);
+
+// Unknown routes answer JSON like everything else, never Express's HTML page.
+app.use((req, res) => {
+  res.status(404).json({ success: false, message: "Not found" });
+});
+
+// Last in the chain, so `next(error)` from any handler and body-parser failures land here. The
+// message and stack of an unexpected error are logged, never returned to the caller.
+app.use((err, req, res, _next) => {
+  if (err.type === "entity.parse.failed") {
+    return res
+      .status(400)
+      .json({ success: false, message: "Malformed JSON body" });
+  }
+  if (err.type === "entity.too.large") {
+    return res
+      .status(413)
+      .json({ success: false, message: "Request body too large" });
+  }
+
+  console.error("[Unhandled Error]:", err);
+  return res
+    .status(500)
+    .json({ success: false, message: "Internal server error" });
+});
 
 export default app;

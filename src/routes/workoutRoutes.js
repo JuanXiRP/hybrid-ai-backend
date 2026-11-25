@@ -7,14 +7,33 @@ import {
 import { protect } from "../middleware/authMiddleware.js";
 import { requireActiveAccess } from "../middleware/entitlementMiddleware.js";
 import { workoutLimiter } from "../middleware/rateLimit.js";
+import { validateBody } from "../validation/validateBody.js";
+import {
+  runWorkoutSchema,
+  strengthWorkoutSchema,
+} from "../validation/schemas.js";
 
 const router = express.Router();
 
 // Protected routes: they require a valid Bearer token from the Android client.
 // Writes stop once the free trial expires; reads (GET /api/plans/*) stay open, so an expired
 // user keeps their plan and history read-only.
-router.post("/strength", protect, requireActiveAccess, createStrengthWorkout);
-router.post("/run", protect, requireActiveAccess, createRunWorkout);
+router.post(
+  "/strength",
+  workoutLimiter,
+  protect,
+  requireActiveAccess,
+  validateBody(strengthWorkoutSchema),
+  createStrengthWorkout,
+);
+router.post(
+  "/run",
+  workoutLimiter,
+  protect,
+  requireActiveAccess,
+  validateBody(runWorkoutSchema),
+  createRunWorkout,
+);
 
 // Idempotent create-or-edit, keyed by a client-generated id. It is the path the app uses for a
 // finished session and for editing a past one; the POST above stays for shipped clients.

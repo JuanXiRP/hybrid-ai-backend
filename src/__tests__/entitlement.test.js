@@ -84,7 +84,16 @@ const expireTrial = async (email) => {
 // defaults per test keeps it that way by construction rather than by luck.
 beforeEach(() => {
   resetGeminiMocks();
-  generateWorkoutPlan.mockResolvedValue(JSON.stringify({ weeks: [] }));
+  generateWorkoutPlan.mockResolvedValue(
+    JSON.stringify({
+      weeks: [
+        {
+          weekNumber: 1,
+          days: [{ dayName: "Rest", workoutType: "rest", exercises: [] }],
+        },
+      ],
+    }),
+  );
   generateCoachReply.mockResolvedValue("AI reply");
   resetPlayBillingMocks();
   isBillingEnabled.mockReturnValue(false);

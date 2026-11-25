@@ -8,7 +8,8 @@ export const ROUTES = {
   googleLogin: "/api/auth/google",
 
   // users
-  createUser: "/api/users",
+  // Removed in Phase 1 (it returned the password hash); kept only to assert it stays gone.
+  removedLegacyCreateUser: "/api/users",
   profile: "/api/users/profile",
 
   // ai
@@ -32,4 +33,5 @@ export const ROUTES = {
   rtdn: "/api/billing/rtdn",
 
   health: "/health",
+  unknownRoute: "/api/does-not-exist",
 };

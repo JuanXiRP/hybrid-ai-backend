@@ -27,8 +27,11 @@ export const givenGoogleUser = ({
   sub = "google-123",
   email,
   name = "Google User",
+  emailVerified = true,
 } = {}) => {
-  verifyIdToken.mockResolvedValue({ getPayload: () => ({ sub, email, name }) });
+  verifyIdToken.mockResolvedValue({
+    getPayload: () => ({ sub, email, name, email_verified: emailVerified }),
+  });
 };
 
 export const resetGoogleAuthMocks = () => {

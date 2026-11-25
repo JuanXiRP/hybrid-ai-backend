@@ -1,7 +1,5 @@
-import { randomUUID } from "crypto";
 import User from "../models/User.js";
 import {
-  makeCreateUserRequest,
   makeGetProfileRequest,
   makeUpdateProfileRequest,
 } from "@test/helpers/api.js";
@@ -140,25 +138,6 @@ describe("mass assignment — entitlement fields are not client-writable", () =>
     const user = await User.findOne({ email });
     expect(user.trialEndsAt ?? null).toBeNull();
     expect(user.subscription?.purchaseToken ?? null).toBeNull();
-  });
-
-  it("ignores isPremium in POST /api/users", async () => {
-    // Arrange
-    const email = `grace-${randomUUID()}@example.test`;
-
-    // Act
-    const res = await makeCreateUserRequest({
-      name: "Grace",
-      email,
-      password: "password123",
-      isPremium: true,
-    });
-
-    // Assert
-    expect(res.status).toBe(201);
-
-    const user = await User.findOne({ email });
-    expect(user.isPremium).toBe(false);
   });
 
   it("still persists the legitimate onboarding fields", async () => {

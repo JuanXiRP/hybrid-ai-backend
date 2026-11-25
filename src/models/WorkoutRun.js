@@ -49,4 +49,7 @@ const workoutRunSchema = new mongoose.Schema(
   { timestamps: true },
 );
 
+// What trainingRepository queries: one athlete's sessions, newest first.
+workoutRunSchema.index({ userId: 1, date: -1 });
+
 export default mongoose.model("WorkoutRun", workoutRunSchema);

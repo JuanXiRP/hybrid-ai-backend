@@ -4,7 +4,12 @@ import bcrypt from "bcryptjs";
 
 const userSchema = new mongoose.Schema(
   {
-    name: { type: String, required: [true, "Name is required"], trim: true },
+    name: {
+      type: String,
+      required: [true, "Name is required"],
+      trim: true,
+      maxlength: 100,
+    },
     email: {
       type: String,
       required: [true, "Email is required"],
@@ -20,7 +25,7 @@ const userSchema = new mongoose.Schema(
           return !this.googleId;
         },
         "Password is required",
-      ], // 🟢 only required if not a Google user
+      ], // only required if not a Google user
       minlength: [6, "Password must be at least 6 characters"],
       select: false,
     },
@@ -148,5 +153,11 @@ userSchema.methods.matchPassword = async function (enteredPassword) {
   if (!this.password) return false;
   return await bcrypt.compare(enteredPassword, this.password);
 };
+
+// One Google identity maps to one account. Partial, because email/password users have no googleId.
+userSchema.index(
+  { googleId: 1 },
+  { unique: true, partialFilterExpression: { googleId: { $type: "string" } } },
+);
 
 export default mongoose.model("User", userSchema);

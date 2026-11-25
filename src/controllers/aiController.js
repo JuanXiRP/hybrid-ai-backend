@@ -83,20 +83,45 @@ const normalizeWeeks = (weeks) => {
   return normalizedWeeks;
 };
 
+const MAX_PLAN_WEEKS = 12;
+const MAX_DAYS_PER_WEEK = 7;
+const WORKOUT_TYPES = new Set(["strength", "cardio", "rest"]);
+
+// Structural sanity check on a generated plan. Content (exercise names, RPE strings) stays the
+// model's business; this only guarantees the shape the app and the coach index into.
+const isPlausiblePlan = (weeks) =>
+  Array.isArray(weeks) &&
+  weeks.length >= 1 &&
+  weeks.length <= MAX_PLAN_WEEKS &&
+  weeks.every(
+    (week) =>
+      Array.isArray(week?.days) &&
+      week.days.length >= 1 &&
+      week.days.length <= MAX_DAYS_PER_WEEK &&
+      week.days.every((day) => WORKOUT_TYPES.has(day?.workoutType)),
+  );
+
 // @desc    Generate a workout plan using Gemini AI and save it to DB
 // @route   POST /api/ai/generate-plan
-// @access  Public (Pending JWT implementation)
+// @access  Private
 export const generatePlan = async (req, res) => {
   try {
     const userId = req.user._id;
 
-    // Build the profile for Gemini from the PERSISTED user (source of truth for
-    // onboarding data like injuries and last_period_date), letting the request body
-    // override for one-off tweaks. This guarantees cycle/injury context reaches the prompt
-    // even though those fields are saved via PATCH /profile, not resent here.
-    const userProfile = { ...req.user.toObject(), ...req.body };
+    // Build the profile for Gemini from the PERSISTED user (source of truth for onboarding data
+    // like injuries and last_period_date). Only the two fields the app sends may override it, and
+    // validateBody has already constrained them; nothing else from the body reaches the prompt.
     const planDuration = req.body.planDuration ?? req.user.planDuration;
     const goal = req.body.goal ?? req.user.goal;
+    const userProfile = { ...req.user.toObject(), planDuration, goal };
+
+    // An incomplete profile has nothing to build a plan from; fail before spending a Gemini call.
+    if (!planDuration) {
+      return res.status(400).json({
+        success: false,
+        message: "Complete your profile before generating a plan.",
+      });
+    }
 
     // 1. Call Gemini Service
     const rawAiResponse = await generateWorkoutPlan(userProfile);
@@ -106,6 +131,20 @@ export const generatePlan = async (req, res) => {
 
     // Fallback in case the AI wraps the array in a "weeks" property or sends it directly
     const weeks = normalizeWeeks(parsedData.weeks || parsedData);
+
+    // The model's output is untrusted input to the database: check its shape before storing it,
+    // so a malformed plan neither lands in Mongo nor spends the athlete's quota.
+    if (!isPlausiblePlan(weeks)) {
+      return res.status(502).json({
+        success: false,
+        message: "The AI returned an invalid plan. Please try again.",
+      });
+    }
+    if (weeks.length !== planDuration) {
+      console.warn(
+        `[Plan Validation] Expected ${planDuration} weeks, got ${weeks.length}`,
+      );
+    }
 
     // 2. Persist the newly generated plan in MongoDB
     const newPlan = await WorkoutPlan.create({
@@ -122,10 +161,9 @@ export const generatePlan = async (req, res) => {
     });
   } catch (error) {
     console.error("[Controller Error]:", error);
-    res.status(500).json({
-      success: false,
-      message: error.message || "Error processing AI response",
-    });
+    res
+      .status(500)
+      .json({ success: false, message: "Error processing AI response" });
   }
 };
 
@@ -147,17 +185,12 @@ export const importPlan = async (req, res) => {
 
     const userId = req.user._id;
 
-    // Same profile resolution as generatePlan: the persisted user is the source of truth for
-    // onboarding data, the body may override. The source material itself is stripped out —
-    // it travels as an explicit argument, not as prompt profile fields.
-    const {
-      sourceText: _text,
-      attachments: _files,
-      ...bodyOverrides
-    } = req.body;
-    const userProfile = { ...req.user.toObject(), ...bodyOverrides };
+    // Same profile resolution as generatePlan: the persisted user is the source of truth, and
+    // only planDuration and goal may be overridden. The source material travels as explicit
+    // arguments, never as prompt profile fields.
     const planDuration = req.body.planDuration ?? req.user.planDuration;
     const goal = req.body.goal ?? req.user.goal;
+    const userProfile = { ...req.user.toObject(), planDuration, goal };
 
     const rawAiResponse = await importAndCompleteWorkoutPlan(userProfile, {
       providedDomain,
@@ -194,10 +227,9 @@ export const importPlan = async (req, res) => {
     });
   } catch (error) {
     console.error("[Import Controller Error]:", error);
-    res.status(500).json({
-      success: false,
-      message: error.message || "Error processing AI response",
-    });
+    res
+      .status(500)
+      .json({ success: false, message: "Error processing AI response" });
   }
 };
 

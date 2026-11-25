@@ -11,6 +11,7 @@ import WorkoutPlan from "../models/WorkoutPlan.js";
 import {
   makeGoogleLoginRequest,
   makeLoginRequest,
+  makeRawLoginRequest,
   makeRegisterRequest,
 } from "@test/helpers/api.js";
 import { registerTestUser } from "@test/helpers/auth.js";
@@ -172,6 +173,74 @@ describe("User.matchPassword", () => {
   });
 });
 
+// ==================== INPUT VALIDATION ====================
+describe("auth request validation", () => {
+  it("rejects an operator object as the login email instead of querying with it", async () => {
+    // Arrange
+    await registerTestUser();
+
+    // Act
+    const res = await makeLoginRequest({
+      email: { $ne: null },
+      password: "password123",
+    });
+
+    // Assert
+    expect(res.status).toBe(400);
+    expect(res.body.success).toBe(false);
+    expect(res.body.token).toBeUndefined();
+  });
+
+  it("rejects an operator object as the register email", async () => {
+    // Act
+    const res = await makeRegisterRequest({
+      email: { $regex: ".*" },
+      password: "password123",
+    });
+
+    // Assert
+    expect(res.status).toBe(400);
+  });
+
+  it("answers 400, not 500, for a non-string password", async () => {
+    // Act
+    const res = await makeLoginRequest({
+      email: uniqueEmail("object-password"),
+      password: { $gt: "" },
+    });
+
+    // Assert
+    expect(res.status).toBe(400);
+  });
+
+  it("rejects a 129-character password on register", async () => {
+    // Arrange
+    const email = uniqueEmail("long-password");
+
+    // Act
+    const res = await makeRegisterRequest({
+      email,
+      password: "a".repeat(129),
+    });
+
+    // Assert
+    expect(res.status).toBe(400);
+    expect(await User.countDocuments({ email })).toBe(0);
+  });
+
+  it("answers malformed JSON with a JSON 400", async () => {
+    // Act
+    const res = await makeRawLoginRequest("{bad");
+
+    // Assert
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({
+      success: false,
+      message: "Malformed JSON body",
+    });
+  });
+});
+
 // ==================== GOOGLE SIGN-IN ====================
 describe("POST /api/auth/google", () => {
   it("creates a new user via Google and returns token", async () => {
@@ -225,5 +294,68 @@ describe("POST /api/auth/google", () => {
     const users = await User.find({ email });
     expect(users).toHaveLength(1);
     expect(users[0].googleId).toBe(GOOGLE_SUB);
+  });
+
+  it("refuses an unverified Google email", async () => {
+    // Arrange
+    const email = uniqueEmail("google-unverified");
+    givenGoogleUser({ sub: GOOGLE_SUB, email, emailVerified: false });
+
+    // Act
+    const res = await makeGoogleLoginRequest({ idToken: "fake-google-token" });
+
+    // Assert
+    expect(res.status).toBe(401);
+    expect(res.body.message).toBe("Your Google account email is not verified.");
+    expect(await User.countDocuments({ email })).toBe(0);
+  });
+
+  it("answers 409 when the email belongs to a different Google account", async () => {
+    // Arrange
+    const email = uniqueEmail("google-conflict");
+    await User.create({ name: "Owner", email, googleId: "google-owner" });
+    givenGoogleUser({ sub: "google-intruder", email });
+
+    // Act
+    const res = await makeGoogleLoginRequest({ idToken: "fake-google-token" });
+
+    // Assert
+    expect(res.status).toBe(409);
+    expect(res.body.message).toBe(
+      "This email is linked to a different Google account.",
+    );
+    const owner = await User.findOne({ email });
+    expect(owner.googleId).toBe("google-owner");
+  });
+
+  it("logs in by googleId even when the Google email has changed", async () => {
+    // Arrange
+    const sub = `google-${randomUUID()}`;
+    const user = await User.create({
+      name: "Mover",
+      email: uniqueEmail("google-old"),
+      googleId: sub,
+    });
+    givenGoogleUser({ sub, email: uniqueEmail("google-new-address") });
+
+    // Act
+    const res = await makeGoogleLoginRequest({ idToken: "fake-google-token" });
+
+    // Assert
+    expect(res.status).toBe(200);
+    expect(res.body.data.id).toBe(String(user._id));
+  });
+
+  it("matches the existing account case-insensitively", async () => {
+    // Arrange
+    const { email } = await registerTestUser({ name: "Mixed Case" });
+    givenGoogleUser({ sub: GOOGLE_SUB, email: email.toUpperCase() });
+
+    // Act
+    const res = await makeGoogleLoginRequest({ idToken: "fake-google-token" });
+
+    // Assert
+    expect(res.status).toBe(200);
+    expect(await User.countDocuments({ email })).toBe(1);
   });
 });

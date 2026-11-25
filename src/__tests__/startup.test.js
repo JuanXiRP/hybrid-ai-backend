@@ -1,6 +1,11 @@
 import mongoose from "mongoose";
 import { assertRequiredEnv } from "../config/env.js";
-import { makeHealthRequest } from "@test/helpers/api.js";
+import {
+  makeAnonymousImportPlanRequest,
+  makeHealthRequest,
+  makeRemovedLegacyCreateUserRequest,
+  makeUnknownRouteRequest,
+} from "@test/helpers/api.js";
 
 const validEnv = {
   MONGO_URI: "mongodb://localhost:27017/test",
@@ -41,6 +46,49 @@ describe("assertRequiredEnv", () => {
     );
 
     warn.mockRestore();
+  });
+
+  describe("in production", () => {
+    const productionEnv = {
+      ...validEnv,
+      NODE_ENV: "production",
+      JWT_SECRET: "x".repeat(32),
+    };
+
+    it("accepts a 32-character JWT_SECRET", () => {
+      // Act + Assert
+      expect(() => assertRequiredEnv(productionEnv)).not.toThrow();
+    });
+
+    it("refuses a JWT_SECRET shorter than 32 characters without printing it", () => {
+      // Arrange
+      const shortSecret = "short-secret-value";
+
+      // Act
+      const attempt = () =>
+        assertRequiredEnv({ ...productionEnv, JWT_SECRET: shortSecret });
+
+      // Assert
+      expect(attempt).toThrow(/JWT_SECRET must be at least 32 characters/);
+      expect(attempt).not.toThrow(new RegExp(shortSecret));
+    });
+
+    it("refuses a missing GOOGLE_WEB_CLIENT_ID instead of warning", () => {
+      // Arrange
+      const { GOOGLE_WEB_CLIENT_ID, ...withoutClientId } = productionEnv;
+
+      // Act + Assert
+      expect(() => assertRequiredEnv(withoutClientId)).toThrow(
+        /GOOGLE_WEB_CLIENT_ID must be set in production/,
+      );
+    });
+  });
+
+  it("does not enforce the secret length outside production", () => {
+    // Act + Assert - CI runs with a 14-character secret and NODE_ENV=test
+    expect(() =>
+      assertRequiredEnv({ ...validEnv, NODE_ENV: "test", JWT_SECRET: "short" }),
+    ).not.toThrow();
   });
 });
 
@@ -125,4 +173,40 @@ describe("GET /health", () => {
     expect(res.status).toBe(200);
     expect(res.body.database).toBe("down");
   }, 10000);
+});
+
+// None of these needs a database: each is answered before any handler touches Mongo.
+describe("JSON error handling and routing", () => {
+  it("answers an unknown route with a JSON 404", async () => {
+    // Act
+    const res = await makeUnknownRouteRequest();
+
+    // Assert
+    expect(res.status).toBe(404);
+    expect(res.body).toEqual({ success: false, message: "Not found" });
+  });
+
+  it("no longer serves the removed legacy POST /api/users", async () => {
+    // Act
+    const res = await makeRemovedLegacyCreateUserRequest({
+      name: "x",
+      email: "x",
+      password: "password123",
+    });
+
+    // Assert
+    expect(res.status).toBe(404);
+    expect(res.body.success).toBe(false);
+  });
+
+  it("answers an anonymous import-plan with 401 before parsing its body", async () => {
+    // Arrange - just over the 100 kb default limit: a parsed body would be a 413, not a 401
+    const body = { sourceText: "a".repeat(150 * 1024) };
+
+    // Act
+    const res = await makeAnonymousImportPlanRequest(body);
+
+    // Assert
+    expect(res.status).toBe(401);
+  });
 });

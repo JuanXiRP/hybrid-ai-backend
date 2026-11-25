@@ -10,6 +10,14 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 const MODEL_ID = "gemini-2.5-flash-lite";
 
 // Helper function to pause execution for retry logic
+// Request timeouts (ms). The Android client gives up at 90 s, so a plan call that outlives 60 s
+// is already wasted work.
+const PLAN_TIMEOUT_MS = 60000;
+const COACH_TIMEOUT_MS = 30000;
+
+// The 2.5 family spends this budget on thinking tokens too; 12 weeks of plan JSON needs room.
+const PLAN_MAX_OUTPUT_TOKENS = 32768;
+
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // 🟢 1. Schema builder: 'workoutType' strictly segregates UI rendering states. 'source' is only
@@ -172,18 +180,27 @@ const callWithRetry = (model, contents, maxRetries) =>
   withBackoff(async () => {
     const result = await model.generateContent(contents);
     const response = await result.response;
+    // A plan cut off by the output budget is syntactically broken JSON. Fail loudly instead of
+    // handing it to JSON.parse; the error carries no `status`, so withBackoff does not retry it.
+    if (response.candidates?.[0]?.finishReason === "MAX_TOKENS") {
+      throw new Error("Gemini output was truncated (MAX_TOKENS)");
+    }
     return response.text();
   }, maxRetries);
 
 // @desc    Generate a tailored workout plan using Gemini AI with retry logic
 export const generateWorkoutPlan = async (userProfile, maxRetries = 3) => {
-  const model = genAI.getGenerativeModel({
-    model: MODEL_ID,
-    generationConfig: {
-      responseMimeType: "application/json",
-      responseSchema: workoutPlanSchema,
+  const model = genAI.getGenerativeModel(
+    {
+      model: MODEL_ID,
+      generationConfig: {
+        responseMimeType: "application/json",
+        responseSchema: workoutPlanSchema,
+        maxOutputTokens: PLAN_MAX_OUTPUT_TOKENS,
+      },
     },
-  });
+    { timeout: PLAN_TIMEOUT_MS },
+  );
 
   const injuriesList = formatInjuries(userProfile);
   const cycleAwareBlock = buildCycleAwareBlock(userProfile);
@@ -251,24 +268,32 @@ export const importAndCompleteWorkoutPlan = async (
   { providedDomain, planDuration, sourceText = "", attachments = [] },
   maxRetries = 3,
 ) => {
-  const model = genAI.getGenerativeModel({
-    model: MODEL_ID,
-    generationConfig: {
-      responseMimeType: "application/json",
-      responseSchema: importedWorkoutPlanSchema,
+  const model = genAI.getGenerativeModel(
+    {
+      model: MODEL_ID,
+      generationConfig: {
+        responseMimeType: "application/json",
+        responseSchema: importedWorkoutPlanSchema,
+        maxOutputTokens: PLAN_MAX_OUTPUT_TOKENS,
+      },
     },
-  });
+    { timeout: PLAN_TIMEOUT_MS },
+  );
 
   const { own, missing, missingLabel } = DOMAIN_LABELS[providedDomain];
   const injuriesList = formatInjuries(userProfile);
   const cycleAwareBlock = buildCycleAwareBlock(userProfile);
   const catalogBlock = buildCatalogBlock(userProfile);
 
+  // The text is user-controlled and sits inside a triple-quoted block; break up any `"""` in it so
+  // it cannot close the block and be read as instructions.
+  const safeSourceText = sourceText.replaceAll('"""', '" " "');
+
   const pastedBlock = sourceText
     ? `
         THE ATHLETE'S OWN ${own.toUpperCase()} PROGRAM (pasted as text):
         """
-        ${sourceText}
+        ${safeSourceText}
         """`
     : "";
 
@@ -388,17 +413,20 @@ export const generateCoachReply = async (
     ? `${COACH_PERSONA}\n\nHere is the user's current training plan, use it to answer questions about their routine:\n${routineContext}`
     : COACH_PERSONA;
 
-  const model = genAI.getGenerativeModel({
-    model: MODEL_ID,
-    systemInstruction,
-    generationConfig: {
-      temperature: 0.6,
-      // No responseMimeType here: a coach reply is prose, unlike the plan flows which pin a JSON
-      // schema. Note the 2.5 family shares this budget with its thinking tokens, so a tight cap
-      // comes back as an empty answer rather than a truncated one — hence the guard below.
-      maxOutputTokens: 2048,
+  const model = genAI.getGenerativeModel(
+    {
+      model: MODEL_ID,
+      systemInstruction,
+      generationConfig: {
+        temperature: 0.6,
+        // No responseMimeType here: a coach reply is prose, unlike the plan flows which pin a JSON
+        // schema. Note the 2.5 family shares this budget with its thinking tokens, so a tight cap
+        // comes back as an empty answer rather than a truncated one — hence the guard below.
+        maxOutputTokens: 2048,
+      },
     },
-  });
+    { timeout: COACH_TIMEOUT_MS },
+  );
 
   const formattedHistory = history.map((turn) => ({
     role: turn.role,

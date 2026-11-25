@@ -19,7 +19,7 @@ const chatMessageSchema = new mongoose.Schema(
       required: true,
     },
     role: { type: String, enum: ["user", "model"], required: true },
-    content: { type: String, required: true },
+    content: { type: String, required: true, maxlength: 20000 },
     // Explicit rather than `timestamps: true`. Messages are immutable, so updatedAt is dead
     // weight; and an explicit field is what lets the migration preserve the original
     // ChatHistory timestamps instead of stamping every historical turn with the migration time.
